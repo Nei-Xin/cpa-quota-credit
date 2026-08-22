@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CPA Quota & Credit 额度与费用展示助手
 // @namespace    https://github.com/router-for-me/cpa-quota-credit
-// @version      1.0.0
+// @version      1.0.1
 // @description  在 CLIProxyAPI 管理面板 (management.html#/quota) 账号卡片上实时呈现 sub2api 风格的请求数、Token 消耗与 A/U 费用徽章 (req / tokens / A $ / U $)
 // @author       router-for-me
 // @match        *://*/management.html*
@@ -13,7 +13,7 @@
 (function () {
     'use strict';
 
-    console.log('[CPA Quota Credit] Userscript loaded');
+    console.log('[CPA Quota Credit] Userscript loaded v1.0.1');
 
     // 样式注入 (sub2api 风格 Pill 胶囊徽章)
     const style = document.createElement('style');
@@ -56,7 +56,6 @@
             white-space: nowrap;
             transition: all 0.2s ease;
         }
-        /* 暗黑主题适配 */
         @media (prefers-color-scheme: dark), (prefers-dark) {
             .cpa-pill {
                 background: rgba(255, 255, 255, 0.08);
@@ -70,22 +69,10 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
-        .cpa-pill .pill-prefix-a {
-            color: #a855f7;
-            font-weight: 700;
-            margin-right: 3px;
-        }
-        .cpa-pill .pill-prefix-u {
-            color: #f59e0b;
-            font-weight: 700;
-            margin-right: 3px;
-        }
-        .cpa-pill .pill-req {
-            color: #0284c7;
-        }
-        .cpa-pill .pill-tok {
-            color: #10b981;
-        }
+        .cpa-pill .pill-prefix-a { color: #a855f7; font-weight: 700; margin-right: 3px; }
+        .cpa-pill .pill-prefix-u { color: #f59e0b; font-weight: 700; margin-right: 3px; }
+        .cpa-pill .pill-req { color: #0284c7; }
+        .cpa-pill .pill-tok { color: #10b981; }
 
         /* 卡片内徽章容器 */
         .cpa-card-badge-container {
@@ -101,6 +88,7 @@
 
     let cachedStats = null;
     let isFetching = false;
+    let authFailed = false;
 
     // 工具函数：数值格式化
     function formatNumber(num) {
@@ -115,15 +103,45 @@
         return '$' + Number(amount || 0).toFixed(2);
     }
 
-    // 获取管理 Secret Key
+    // 智能探测 CPA 管理密钥
+    let detectedToken = '';
+    
+    // 监听全局 fetch 抓取管理面板已登录携带的 Token
+    const originalFetch = window.fetch;
+    window.fetch = async function (...args) {
+        try {
+            const [url, config] = args;
+            if (config && config.headers) {
+                let token = '';
+                if (typeof config.headers.get === 'function') {
+                    token = config.headers.get('Authorization') || config.headers.get('X-Management-Key');
+                } else if (config.headers['Authorization']) {
+                    token = config.headers['Authorization'];
+                } else if (config.headers['X-Management-Key']) {
+                    token = config.headers['X-Management-Key'];
+                }
+                if (token && token.startsWith('Bearer ')) {
+                    detectedToken = token.replace('Bearer ', '').trim();
+                    authFailed = false;
+                } else if (token) {
+                    detectedToken = token.trim();
+                    authFailed = false;
+                }
+            }
+        } catch (e) {}
+        return originalFetch.apply(this, args);
+    };
+
     function getManagementKey() {
+        if (detectedToken) return detectedToken;
         const candidates = [
             'management_secret_key',
             'secret_key',
             'cpa_secret_key',
             'management_key',
             'auth_key',
-            'token'
+            'token',
+            'cpa_token'
         ];
         for (const k of candidates) {
             const v = localStorage.getItem(k) || sessionStorage.getItem(k);
@@ -132,9 +150,9 @@
         return '';
     }
 
-    // 从 CPA 后端拉取统计数据
+    // 从 CPA 后端拉取统计数据 (带熔断机制，绝不重复触发 403 封禁)
     async function fetchStats() {
-        if (isFetching) return;
+        if (isFetching || authFailed) return;
         isFetching = true;
         try {
             const headers = {};
@@ -151,9 +169,12 @@
 
             if (res.ok) {
                 cachedStats = await res.json();
+                authFailed = false;
                 renderAllBadges();
-            } else if (res.status === 404) {
-                console.warn('[CPA Quota Credit] 插件尚未在 config.yaml 中启用或未加载');
+            } else if (res.status === 403 || res.status === 401) {
+                // 遇到 403/401 立即熔断暂停，等待下次用户登录/输入 Key 抓取成功后再请求，绝不刷屏造成封禁
+                authFailed = true;
+                console.warn('[CPA Quota Credit] 管理接口需要鉴权，将在捕获管理密钥后自动重试');
             }
         } catch (e) {
             console.error('[CPA Quota Credit] Fetch stats error:', e);
@@ -177,11 +198,9 @@
         if (!cachedStats || !cachedStats.auths || !accountName) return null;
         const target = accountName.trim().toLowerCase();
 
-        // 1. 精确匹配
         let matched = cachedStats.auths.find(a => a.auth_id && a.auth_id.toLowerCase() === target);
         if (matched) return matched;
 
-        // 2. 前缀/模糊包含匹配 (解决页面中带 ... 省略号的情况)
         const cleanName = target.replace(/\.\.\.$/, '').trim();
         matched = cachedStats.auths.find(a => {
             const aid = (a.auth_id || '').toLowerCase();
@@ -194,7 +213,7 @@
     function renderAllBadges() {
         if (!cachedStats) return;
 
-        // 1. 渲染顶部全局统计条 (在 quota 容器顶部)
+        // 1. 渲染全局总额度条
         const quotaContainer = document.querySelector('.quota-container, .quota-view, .content-container, main, #app');
         if (quotaContainer && !document.getElementById('cpa-global-quota-bar')) {
             const summary = cachedStats.summary || { total_requests: 0, total_tokens: 0, actual_cost: 0, user_cost: 0 };
@@ -202,25 +221,17 @@
             bar.id = 'cpa-global-quota-bar';
             bar.className = 'cpa-global-badge-bar';
             bar.innerHTML = `
-                <span class="cpa-global-title">📊 总消耗看板:</span>
+                <span class="cpa-global-title">📊 总额度消耗:</span>
                 ${buildPillBadgesHTML(summary.total_requests, summary.total_tokens, summary.actual_cost, summary.user_cost)}
             `;
             quotaContainer.insertBefore(bar, quotaContainer.firstChild);
         }
 
-        // 2. 查找页面中所有的账号卡片
-        // 兼容 el-card, iview card, custom card 等 DOM 结构
+        // 2. 遍历注入每个卡片
         const cards = document.querySelectorAll('.el-card, .n-card, .quota-card, [class*="card"]');
-
         cards.forEach(card => {
-            // 防止重复插入
             if (card.querySelector('.cpa-card-badge-container')) return;
-
-            // 查找卡片标题（包含 codex-, claude-, 等账号前缀或邮箱名）
-            const headerElem = card.querySelector('.el-card__header, .n-card-header, h3, h4, .title, strong, [class*="header"], [class*="title"]') || card;
             const textNodes = Array.from(card.querySelectorAll('*')).map(el => el.textContent.trim());
-
-            // 尝试匹配卡片中的账号文本
             let accountName = '';
             for (const text of textNodes) {
                 if (text.includes('codex-') || text.includes('claude-') || text.includes('gemini-') || text.includes('@') || text.includes('.json')) {
@@ -228,7 +239,6 @@
                     break;
                 }
             }
-
             if (!accountName) return;
 
             const stat = findAuthStat(accountName);
@@ -241,37 +251,28 @@
             container.className = 'cpa-card-badge-container';
             container.innerHTML = buildPillBadgesHTML(req, tok, actualCost, userCost);
 
-            // 找到最佳插入位置：插入在标题下方或周限额进度条上方
             const progressBar = card.querySelector('.el-progress, [class*="progress"], [class*="limit"]');
             if (progressBar && progressBar.parentNode) {
                 progressBar.parentNode.insertBefore(container, progressBar);
-            } else if (headerElem && headerElem.nextSibling) {
-                headerElem.parentNode.insertBefore(container, headerElem.nextSibling);
             } else {
                 card.appendChild(container);
             }
         });
     }
 
-    // 页面加载及 DOM 变动监听 (SPA 路由/异步加载自适应)
-    let observerTimeout = null;
+    // 监听 SPA 路由变动与 DOM 渲染
+    let timer = null;
     const observer = new MutationObserver(() => {
-        if (observerTimeout) clearTimeout(observerTimeout);
-        observerTimeout = setTimeout(() => {
-            if (window.location.hash.includes('quota') || window.location.pathname.includes('quota') || window.location.href.includes('management')) {
-                if (!cachedStats) {
-                    fetchStats();
-                } else {
-                    renderAllBadges();
-                }
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+            if (window.location.href.includes('quota') || window.location.href.includes('management')) {
+                if (!cachedStats) fetchStats();
+                else renderAllBadges();
             }
         }, 300);
     });
-
     observer.observe(document.body, { childList: true, subtree: true });
 
-    // 初始执行 & 定时 10 秒增量刷新
     fetchStats();
-    setInterval(fetchStats, 10000);
-
+    setInterval(fetchStats, 15000);
 })();
