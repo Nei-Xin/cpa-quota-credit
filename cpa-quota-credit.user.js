@@ -2,7 +2,7 @@
 // @name         CPA Quota & Credit 额度与费用展示助手
 // @namespace    https://github.com/router-for-me/cpa-quota-credit
 // @version      1.0.5
-// @description  基于 sub2api 窗口算法，在 CLIProxyAPI 账号卡片上呈现当前周期用量与 A/U 费用 (轻量、无死循环、高响应)
+// @description  在 CLIProxyAPI 账号卡片上实时呈现当前周期用量与 A/U 费用徽章 (轻量、无死循环、高响应)
 // @author       router-for-me
 // @match        *://*/management.html*
 // @match        https://cpa.zzii.de/management.html*

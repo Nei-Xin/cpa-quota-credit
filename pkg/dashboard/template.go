@@ -112,7 +112,7 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
         <div class="header">
             <div class="title-group">
                 <h1>CLIProxyAPI 额度与计费控制中心</h1>
-                <p>实时基于 sub2api 窗口算法核算 Token 消耗与多维账单 (A: 上游真实成本 | U: 客户端计费额度)</p>
+                <p>实时高精度核算 Token 消耗与多维账单 (A: 上游真实成本 | U: 客户端计费额度)</p>
             </div>
             
             <div class="badge-bar">

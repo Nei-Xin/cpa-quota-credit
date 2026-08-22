@@ -3,14 +3,14 @@
   "plugins": [
     {
       "id": "cpa-quota-credit",
-      "name": "Quota & Credit (额度与计费统计)",
-      "description": "基于 sub2api 计费体系的高精度 Token 计量、A/U 成本核算、可视化控制看板与配额管理助手插件",
+      "name": "Quota & Credit (额度与费用统计)",
+      "description": "高精度 Token 计量、A/U 双重成本核算、动态周期窗口、可视化控制看板与配额管理助手插件",
       "author": "Nei-Xin",
       "version": "1.0.3",
       "repository": "https://github.com/Nei-Xin/cpa-quota-credit",
       "homepage": "https://github.com/Nei-Xin/cpa-quota-credit",
       "license": "MIT",
-      "tags": ["billing", "quota", "token", "pricing", "dashboard", "sub2api"],
+      "tags": ["billing", "quota", "token", "pricing", "dashboard"],
       "install": {
         "type": "github-release",
         "artifacts": [
