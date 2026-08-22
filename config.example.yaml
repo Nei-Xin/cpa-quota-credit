@@ -1,0 +1,34 @@
+# CLIProxyAPI (CPA) 插件配置示例 - cpa-quota-credit
+plugins:
+  enabled: true
+  dir: "plugins" # 存放编译好的 .so / .dll / .dylib 目录
+  configs:
+    cpa-quota-credit:
+      enabled: true
+      priority: 10
+      
+      # 嵌入式数据库存储路径 (自动创建)
+      db_path: "./data/quota_credit.db"
+      
+      # 动态价格源配置 (LiteLLM 规则)
+      pricing:
+        remote_url: "https://raw.githubusercontent.com/Wei-Shaw/model-price-repo/main/model_prices_and_context_window.json"
+        hash_url: "https://raw.githubusercontent.com/Wei-Shaw/model-price-repo/main/model_prices_and_context_window.sha256"
+        update_interval_hours: 24
+        fallback_file: "./data/model_pricing_fallback.json"
+        
+      # 计费与成本倍率配置 (对应 A $ 实际成本 与 U $ 用户扣费)
+      multipliers:
+        default_user_multiplier: 1.0     # 默认用户扣费倍率 (U $)
+        default_account_multiplier: 1.0  # 默认上游成本倍率 (A $)
+        
+        # 针对特定下游 API Key 单独设置扣费倍率 (影响 U $)
+        key_multipliers:
+          "sk-internal-dev": 1.0
+          "sk-external-user": 1.5
+          "sk-vip-partner": 0.8
+          
+        # 针对特定上游凭证文件 Auth ID 单独设置成本倍率 (影响 A $)
+        account_multipliers:
+          "claude-oauth-discount.json": 0.8
+          "codex-prod-team.json": 1.0

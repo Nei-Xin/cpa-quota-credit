@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLIProxyAPI 额度与计费统计看板 (CPA Quota & Credit 预览)</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --card-border: #334155;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-blue: #38bdf8;
+            --accent-emerald: #34d399;
+            --accent-purple: #c084fc;
+            --accent-amber: #fbbf24;
+            --badge-bg: rgba(255, 255, 255, 0.07);
+            --badge-border: rgba(255, 255, 255, 0.12);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-primary); padding: 24px; }
+        .container { max-width: 1320px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--card-border); }
+        .title-group h1 { font-size: 22px; font-weight: 600; color: var(--text-primary); }
+        .title-group p { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+        
+        /* sub2api Style Pill Badges */
+        .badge-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .sub2api-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 14px;
+            background: var(--badge-bg);
+            border: 1px solid var(--badge-border);
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #cbd5e1;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            transition: all 0.2s;
+        }
+        .sub2api-pill:hover { background: rgba(255, 255, 255, 0.12); border-color: rgba(255,255,255,0.25); }
+        .sub2api-pill .highlight-req { color: var(--accent-blue); margin-left: 2px; }
+        .sub2api-pill .highlight-tok { color: var(--accent-emerald); margin-left: 2px; }
+        .sub2api-pill .highlight-a { color: var(--accent-purple); margin-right: 4px; }
+        .sub2api-pill .highlight-u { color: var(--accent-amber); margin-right: 4px; }
+        
+        .refresh-btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .refresh-btn:hover { background: #2563eb; }
+
+        /* Grid */
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+        @media (max-width: 1100px) { .grid-3 { grid-template-columns: 1fr; } }
+        
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 18px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+        }
+        .card h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: var(--text-primary); border-left: 4px solid var(--accent-blue); padding-left: 8px; }
+        
+        table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; }
+        th { color: var(--text-secondary); font-weight: 500; padding: 8px 10px; border-bottom: 1px solid var(--card-border); }
+        td { padding: 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+        tr:hover td { background-color: rgba(255, 255, 255, 0.02); }
+        
+        .badge-cell { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); }
+        .badge-auth { background: rgba(192, 132, 252, 0.15); color: var(--accent-purple); }
+        .text-num { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+        .cost-u { color: var(--accent-amber); font-weight: 600; }
+        .cost-a { color: var(--accent-purple); font-weight: 600; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="title-group">
+                <h1>CLIProxyAPI 额度与计费控制中心</h1>
+                <p>实时基于 sub2api 算法核算 Token 消耗与多维账单 (A: 上游真实成本 | U: 客户端计费额度)</p>
+            </div>
+            <div class="badge-bar">
+                <!-- 4 Pills Aligned with sub2api UI -->
+                <div class="sub2api-pill" id="pill-req">1.6K req</div>
+                <div class="sub2api-pill" id="pill-tok">127.5M</div>
+                <div class="sub2api-pill" id="pill-a"><span class="highlight-a">A</span> $103.56</div>
+                <div class="sub2api-pill" id="pill-u"><span class="highlight-u">U</span> $103.56</div>
+                <button class="refresh-btn">刷新</button>
+            </div>
+        </div>
+
+        <div class="grid-3">
+            <!-- 1. Client / User Keys -->
+            <div class="card">
+                <h2>调用者 (API Key) 消耗</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>API Key</th>
+                            <th>请求</th>
+                            <th>Token</th>
+                            <th>扣费 (U $)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="badge-cell">sk-team-dev</span></td>
+                            <td class="text-num">952</td>
+                            <td class="text-num">82.3M</td>
+                            <td class="text-num cost-u">$66.42</td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge-cell">sk-client-app</span></td>
+                            <td class="text-num">480</td>
+                            <td class="text-num">31.8M</td>
+                            <td class="text-num cost-u">$25.90</td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge-cell">sk-vip-partner</span></td>
+                            <td class="text-num">168</td>
+                            <td class="text-num">13.4M</td>
+                            <td class="text-num cost-u">$11.24</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 2. Upstream Auths / Accounts -->
+            <div class="card">
+                <h2>上游账号 (Auth / 渠道) 成本</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>上游账号</th>
+                            <th>请求</th>
+                            <th>Token</th>
+                            <th>成本 (A $)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="badge-cell badge-auth">claude-oauth-1.json</span></td>
+                            <td class="text-num">840</td>
+                            <td class="text-num">68.2M</td>
+                            <td class="text-num cost-a">$54.12</td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge-cell badge-auth">codex-prod-2.json</span></td>
+                            <td class="text-num">512</td>
+                            <td class="text-num">42.5M</td>
+                            <td class="text-num cost-a">$36.80</td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge-cell badge-auth">vertex-sa-3.json</span></td>
+                            <td class="text-num">248</td>
+                            <td class="text-num">16.8M</td>
+                            <td class="text-num cost-a">$12.64</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 3. Model Stats -->
+            <div class="card">
+                <h2>模型消耗分布</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>模型</th>
+                            <th>请求</th>
+                            <th>Token</th>
+                            <th>扣费 (U $)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>claude-3-7-sonnet</strong></td>
+                            <td class="text-num">840</td>
+                            <td class="text-num">68.2M</td>
+                            <td class="text-num cost-u">$54.12</td>
+                        </tr>
+                        <tr>
+                            <td><strong>gpt-4o</strong></td>
+                            <td class="text-num">512</td>
+                            <td class="text-num">42.5M</td>
+                            <td class="text-num cost-u">$36.80</td>
+                        </tr>
+                        <tr>
+                            <td><strong>gemini-2.5-pro</strong></td>
+                            <td class="text-num">248</td>
+                            <td class="text-num">16.8M</td>
+                            <td class="text-num cost-u">$12.64</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Recent Logs -->
+        <div class="card">
+            <h2>最新请求核算明细</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>时间</th>
+                        <th>API Key</th>
+                        <th>上游账号</th>
+                        <th>模型</th>
+                        <th>Prompt / Cache</th>
+                        <th>Output / Reasoning</th>
+                        <th>总 Token</th>
+                        <th>A 成本</th>
+                        <th>U 计费</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td style="color: var(--text-secondary);">19:07:22</td>
+                        <td><span class="badge-cell">sk-team-dev</span></td>
+                        <td><span class="badge-cell badge-auth">claude-oauth-1.json</span></td>
+                        <td><strong>claude-3-7-sonnet</strong></td>
+                        <td class="text-num">1,240 / <span style="color: var(--accent-blue)">4,800</span></td>
+                        <td class="text-num">850 / <span style="color: var(--accent-emerald)">256</span></td>
+                        <td class="text-num"><strong>7,146</strong></td>
+                        <td class="text-num cost-a">$0.0162</td>
+                        <td class="text-num cost-u">$0.0162</td>
+                    </tr>
+                    <tr>
+                        <td style="color: var(--text-secondary);">19:07:15</td>
+                        <td><span class="badge-cell">sk-client-app</span></td>
+                        <td><span class="badge-cell badge-auth">codex-prod-2.json</span></td>
+                        <td><strong>gpt-4o</strong></td>
+                        <td class="text-num">820 / <span style="color: var(--accent-blue)">0</span></td>
+                        <td class="text-num">430 / <span style="color: var(--accent-emerald)">0</span></td>
+                        <td class="text-num"><strong>1,250</strong></td>
+                        <td class="text-num cost-a">$0.0063</td>
+                        <td class="text-num cost-u">$0.0063</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,24 @@
+# Binaries and build output
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.h
+
+# Database and local data
+data/
+*.db
+*.db-journal
+
+# Test binaries
+*.test
+*.out
+
+# IDE and OS files
+.DS_Store
+.idea/
+.vscode/
+Thumbs.db
