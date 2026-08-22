@@ -1,6 +1,20 @@
 # CLIProxyAPI 额度与计费统计插件 (cpa-quota-credit)
 
-为 **CLIProxyAPI (CPA)** 打造的标准 C-ABI 动态链接库插件。提供高精度的 Token 消耗计量、上游成本与下游用户计费分离（A $ / U $）、动态配额窗口统计、嵌入式 Web 控制面板以及配套的油猴管理面板助手。
+为 **CLIProxyAPI (CPA)** 打造的标准 C-ABI 动态链接库插件。提供高精度的 Token 消耗计量、上游成本与下游用户计费分离（A $ / U $）、动态配额时间窗口统计、嵌入式 Web 控制面板以及配套的油猴管理面板助手。
+
+---
+
+## 📸 界面预览
+
+### 1. 独立 Web 控制看板
+提供全局徽章统计、调用方（API Key）脱敏消耗榜、上游渠道账号成本榜、模型分布与实时核算流水明细：
+
+![独立 Web 控制看板](assets/dashboard_preview.png)
+
+### 2. 油猴管理面板助手
+在 CPA 官方管理后台（`management.html#/quota`）账号卡片上实时注入当前重置周期内的 4 枚胶囊徽章（到达周期自动归零）：
+
+![油猴管理面板助手](assets/tampermonkey_preview.png)
 
 ---
 
@@ -22,11 +36,8 @@
   - 智能兼容 Claude 有序家族匹配、OpenAI 别名降级、Gemini 3.6 Thinking 规则。
 - **嵌入式持久化存储**：
   - 基于纯 Go 的轻量级 `bbolt` 嵌入式数据库，免去外部数据库搭建与维护成本。
-- **独立现代化 Web 仪表盘**：
-  - 顶部直接呈现 **4 枚 Pill 胶囊徽章**：`req` / `tokens` / `A $` / `U $`。
-  - 支持调用方 API Key 消耗排行（自动脱敏）、上游账号成本榜、模型用量分布以及实时调用流水明细。
-- **配套油猴管理面板助手**：
-  - 在 CPA 官方管理面板（`management.html#/quota`）账号卡片上实时注入可视化徽章。
+- **调用方密钥安全脱敏**：
+  - 看板全链路对 API Key 自动进行掩码遮蔽（如 `fX4A****n29@`），杜绝明文泄露。
 
 ---
 
@@ -65,7 +76,7 @@ plugins:
       enabled: true
       priority: 10
       
-      # 数据库保存路径（自动持久化）
+      # 数据库保存路径（建议挂载持久化目录）
       db_path: "./data/quota_credit.db"
       
       # 动态价格源配置
@@ -104,7 +115,7 @@ http://<你的CPA服务器地址>:<端口>/v0/resource/plugins/cpa-quota-credit/
 ### 2. 油猴脚本（浏览器卡片助手）
 1. 在浏览器安装 **Tampermonkey** 扩展。
 2. 添加新建脚本，将仓库中的 [`cpa-quota-credit.user.js`](https://github.com/Nei-Xin/cpa-quota-credit/blob/main/cpa-quota-credit.user.js) 粘贴并保存。
-3. 打开 CPA 管理后台的配额页面（`management.html#/quota`），即可在每个账号卡片上实时查看本周期的请求数、Token 消耗与 A/U 费用徽章！
+3. 打开 CPA 官方管理后台的配额页面（`management.html#/quota`），即可在每个账号卡片上实时查看本周期的请求数、Token 消耗与 A/U 费用徽章！
 
 ---
 
