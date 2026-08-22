@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    {
+      "id": "cpa-quota-credit",
+      "name": "Quota & Credit (额度与计费统计)",
+      "description": "基于 sub2api 计费体系的高精度 Token 计量、A/U 成本核算、可视化控制看板与配额管理助手插件",
+      "author": "Nei-Xin",
+      "version": "1.0.3",
+      "repository": "https://github.com/Nei-Xin/cpa-quota-credit",
+      "homepage": "https://github.com/Nei-Xin/cpa-quota-credit",
+      "license": "MIT",
+      "tags": ["billing", "quota", "token", "pricing", "dashboard", "sub2api"],
+      "install": {
+        "type": "github-release",
+        "artifacts": [
+          {
+            "goos": "linux",
+            "goarch": "amd64",
+            "url": "https://github.com/Nei-Xin/cpa-quota-credit/releases/download/v1.0.3/cpa-quota-credit-linux-amd64.tar.gz"
+          },
+          {
+            "goos": "linux",
+            "goarch": "arm64",
+            "url": "https://github.com/Nei-Xin/cpa-quota-credit/releases/download/v1.0.3/cpa-quota-credit-linux-arm64.tar.gz"
+          },
+          {
+            "goos": "windows",
+            "goarch": "amd64",
+            "url": "https://github.com/Nei-Xin/cpa-quota-credit/releases/download/v1.0.3/cpa-quota-credit-windows-amd64.zip"
+          },
+          {
+            "goos": "darwin",
+            "goarch": "arm64",
+            "url": "https://github.com/Nei-Xin/cpa-quota-credit/releases/download/v1.0.3/cpa-quota-credit-darwin-arm64.tar.gz"
+          }
+        ]
+      }
+    }
+  ]
+}
