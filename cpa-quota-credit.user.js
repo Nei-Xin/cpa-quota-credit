@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         CPA Quota & Credit 额度与费用展示助手
 // @namespace    https://github.com/router-for-me/cpa-quota-credit
-// @version      1.0.4
-// @description  基于 sub2api 窗口统计算法，在 CLIProxyAPI 账号卡片上实时呈现当前重置周期内的请求数、Token 消耗与 A/U 费用徽章 (周期重置时自动归零)
+// @version      1.0.5
+// @description  基于 sub2api 窗口算法，在 CLIProxyAPI 账号卡片上呈现当前周期用量与 A/U 费用 (轻量、无死循环、高响应)
 // @author       router-for-me
 // @match        *://*/management.html*
 // @match        https://cpa.zzii.de/management.html*
@@ -13,29 +13,31 @@
 (function () {
     'use strict';
 
-    console.log('[CPA Quota Credit] Userscript v1.0.4 (sub2api window mode) loaded');
+    console.log('[CPA Quota Credit] Userscript v1.0.5 starting...');
 
-    // 注入 sub2api 风格 Pill 胶囊徽章样式
+    // 1. 样式注入
     const style = document.createElement('style');
+    style.id = 'cpa-quota-credit-style';
     style.textContent = `
         .cpa-pill {
             display: inline-flex !important;
             align-items: center !important;
-            padding: 3px 8px !important;
+            padding: 2px 7px !important;
             background: #f1f5f9 !important;
             border: 1px solid #cbd5e1 !important;
             border-radius: 6px !important;
-            font-size: 12px !important;
+            font-size: 11.5px !important;
             font-weight: 600 !important;
             color: #334155 !important;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
             line-height: 1.4 !important;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.04) !important;
             white-space: nowrap !important;
-            margin-right: 6px !important;
-            margin-bottom: 4px !important;
+            margin-right: 5px !important;
+            margin-bottom: 3px !important;
             cursor: default !important;
             transition: all 0.2s ease !important;
+            user-select: none !important;
         }
 
         @media (prefers-color-scheme: dark), (prefers-dark), [data-theme='dark'], html.dark {
@@ -60,14 +62,17 @@
             display: flex !important;
             align-items: center !important;
             flex-wrap: wrap !important;
-            margin: 8px 0 10px 0 !important;
-            padding: 4px 0 !important;
+            margin: 6px 0 8px 0 !important;
+            padding: 2px 0 !important;
         }
     `;
-    document.head.appendChild(style);
+    if (!document.getElementById('cpa-quota-credit-style')) {
+        document.head.appendChild(style);
+    }
 
     let cachedStats = null;
     let isFetching = false;
+    let isRendering = false;
 
     function formatNumber(num) {
         if (!num || isNaN(num)) return '0';
@@ -87,8 +92,7 @@
         
         const endpoints = [
             '/v0/resource/plugins/cpa-quota-credit/stats',
-            '/v0/resource/plugins/cpa-quota-credit/dashboard?format=json',
-            window.location.origin + '/v0/resource/plugins/cpa-quota-credit/stats'
+            '/v0/resource/plugins/cpa-quota-credit/dashboard?format=json'
         ];
 
         for (let url of endpoints) {
@@ -104,7 +108,6 @@
         isFetching = false;
     }
 
-    // 构建 sub2api 胶囊徽章 (展示当前周期用量，tooltip 展示历史总计)
     function buildPillBadgesHTML(wStats, totalStats) {
         const req = wStats ? wStats.total_requests : 0;
         const tok = wStats ? wStats.total_tokens : 0;
@@ -140,67 +143,92 @@
         return matched;
     }
 
+    // 渲染卡片徽章 (防死循环保护)
     function renderBadges() {
-        if (!cachedStats) return;
+        if (!cachedStats || isRendering) return;
+        isRendering = true;
 
-        const allButtons = Array.from(document.querySelectorAll('button, div, span, a'));
-        const refreshBtns = allButtons.filter(el => el.textContent && el.textContent.trim() === '刷新额度');
+        try {
+            const allButtons = Array.from(document.querySelectorAll('button, div, span, a'));
+            const refreshBtns = allButtons.filter(el => el.textContent && el.textContent.trim() === '刷新额度');
 
-        refreshBtns.forEach(btn => {
-            let card = btn.parentElement;
-            for (let i = 0; i < 6; i++) {
-                if (!card || card === document.body) break;
-                const text = card.textContent || '';
-                if (text.includes('codex-') || text.includes('claude-') || text.includes('gemini-') || text.includes('@') || text.includes('套餐')) {
-                    break;
+            refreshBtns.forEach(btn => {
+                let card = btn.parentElement;
+                for (let i = 0; i < 6; i++) {
+                    if (!card || card === document.body) break;
+                    const text = card.textContent || '';
+                    if (text.includes('codex-') || text.includes('claude-') || text.includes('gemini-') || text.includes('@') || text.includes('套餐')) {
+                        break;
+                    }
+                    card = card.parentElement;
                 }
-                card = card.parentElement;
-            }
 
-            if (!card) return;
+                if (!card) return;
 
-            const cardText = card.textContent || '';
-            const match = cardText.match(/([a-zA-Z0-9_\-\.]+@[a-zA-Z0-9_\-\.]+|codex-[a-zA-Z0-9_\-\.]+|claude-[a-zA-Z0-9_\-\.]+|gemini-[a-zA-Z0-9_\-\.]+)/);
-            const accountName = match ? match[1] : '';
+                const cardText = card.textContent || '';
+                const match = cardText.match(/([a-zA-Z0-9_\-\.]+@[a-zA-Z0-9_\-\.]+|codex-[a-zA-Z0-9_\-\.]+|claude-[a-zA-Z0-9_\-\.]+|gemini-[a-zA-Z0-9_\-\.]+)/);
+                const accountName = match ? match[1] : '';
 
-            const stat = findAuthStat(accountName);
-            
-            // sub2api 算法：根据卡片类型选择当前周期窗口（周限额选 seven_day，月度/其他默认七天/今日窗口）
-            let windowStat = stat ? (stat.seven_day || stat.today || stat) : null;
-            let totalStat = stat ? { total_requests: stat.total_requests, total_tokens: stat.total_tokens, actual_cost: stat.actual_cost, user_cost: stat.user_cost } : null;
+                const stat = findAuthStat(accountName);
+                let windowStat = stat ? (stat.seven_day || stat.today || stat) : null;
+                let totalStat = stat ? { total_requests: stat.total_requests, total_tokens: stat.total_tokens, actual_cost: stat.actual_cost, user_cost: stat.user_cost } : null;
 
-            let existingContainer = card.querySelector('.cpa-card-badge-container');
-            if (existingContainer) {
-                existingContainer.innerHTML = buildPillBadgesHTML(windowStat, totalStat);
-                return;
-            }
+                const targetHTML = buildPillBadgesHTML(windowStat, totalStat);
 
-            const badgeBox = document.createElement('div');
-            badgeBox.className = 'cpa-card-badge-container';
-            badgeBox.innerHTML = buildPillBadgesHTML(windowStat, totalStat);
-
-            const rows = Array.from(card.children);
-            let inserted = false;
-            for (let row of rows) {
-                if (row.textContent && (row.textContent.includes('套餐') || row.textContent.includes('限额') || row.textContent.includes('重置'))) {
-                    card.insertBefore(badgeBox, row);
-                    inserted = true;
-                    break;
+                let existingContainer = card.querySelector('.cpa-card-badge-container');
+                if (existingContainer) {
+                    if (existingContainer.dataset.renderedHash !== accountName + (windowStat ? windowStat.total_requests : 0)) {
+                        existingContainer.innerHTML = targetHTML;
+                        existingContainer.dataset.renderedHash = accountName + (windowStat ? windowStat.total_requests : 0);
+                    }
+                    return;
                 }
-            }
-            if (!inserted) {
-                card.insertBefore(badgeBox, card.firstChild);
-            }
-        });
+
+                const badgeBox = document.createElement('div');
+                badgeBox.className = 'cpa-card-badge-container';
+                badgeBox.dataset.renderedHash = accountName + (windowStat ? windowStat.total_requests : 0);
+                badgeBox.innerHTML = targetHTML;
+
+                const rows = Array.from(card.children);
+                let inserted = false;
+                for (let row of rows) {
+                    if (row.textContent && (row.textContent.includes('套餐') || row.textContent.includes('限额') || row.textContent.includes('重置'))) {
+                        card.insertBefore(badgeBox, row);
+                        inserted = true;
+                        break;
+                    }
+                }
+                if (!inserted) {
+                    card.insertBefore(badgeBox, card.firstChild);
+                }
+            });
+        } finally {
+            isRendering = false;
+        }
     }
 
-    const observer = new MutationObserver(() => {
-        if (!cachedStats) fetchStats();
-        else renderBadges();
+    // 2. 使用防抖监听 DOM 变动 (Debounce 600ms，彻底防止死循环与卡顿)
+    let debounceTimer = null;
+    const observer = new MutationObserver((mutations) => {
+        // 过滤掉自身 badge 产生的变动
+        const isSelfMutation = mutations.every(m => {
+            return m.target && (m.target.classList?.contains('cpa-card-badge-container') || m.target.classList?.contains('cpa-pill'));
+        });
+        if (isSelfMutation) return;
+
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            if (!cachedStats) {
+                fetchStats();
+            } else {
+                renderBadges();
+            }
+        }, 600);
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
 
+    // 初始执行 & 定时 10 秒平滑刷新
     fetchStats();
-    setInterval(fetchStats, 8000);
+    setInterval(fetchStats, 10000);
 })();
