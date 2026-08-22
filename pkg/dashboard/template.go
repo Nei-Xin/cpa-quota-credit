@@ -201,6 +201,15 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
             return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
 
+        // 脱敏遮蔽 API Key (避免明文泄漏)
+        function maskAPIKey(key) {
+            if (!key) return 'anonymous';
+            const k = String(key).trim();
+            if (k.length <= 6) return '****';
+            if (k.length <= 10) return k.substring(0, 2) + '****' + k.substring(k.length - 2);
+            return k.substring(0, 4) + '****' + k.substring(k.length - 4);
+        }
+
         async function fetchStats() {
             const endpoints = [
                 '/v0/resource/plugins/cpa-quota-credit/stats',
@@ -242,8 +251,9 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
                 var html = '';
                 for (var i = 0; i < data.keys.length; i++) {
                     var k = data.keys[i];
+                    var masked = maskAPIKey(k.api_key);
                     html += '<tr>' +
-                        '<td><span class="badge-cell" title="' + escapeHTML(k.api_key) + '">' + escapeHTML(k.api_key) + '</span></td>' +
+                        '<td><span class="badge-cell">' + escapeHTML(masked) + '</span></td>' +
                         '<td class="text-num">' + (k.total_requests || 0).toLocaleString() + '</td>' +
                         '<td class="text-num">' + formatNumber(k.total_tokens) + '</td>' +
                         '<td class="text-num cost-u">' + formatUSD(k.user_cost) + '</td>' +
@@ -298,9 +308,10 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
                     var log = data.recent_logs[x];
                     var c = log.cost || {};
                     var timeStr = new Date(log.timestamp).toLocaleTimeString();
+                    var maskedKey = maskAPIKey(log.api_key);
                     lHtml += '<tr>' +
                         '<td style="color: var(--text-secondary);">' + timeStr + '</td>' +
-                        '<td><span class="badge-cell">' + escapeHTML(log.api_key) + '</span></td>' +
+                        '<td><span class="badge-cell">' + escapeHTML(maskedKey) + '</span></td>' +
                         '<td><span class="badge-cell badge-auth">' + escapeHTML(log.auth_id || '-') + '</span></td>' +
                         '<td><strong>' + escapeHTML(log.model) + '</strong></td>' +
                         '<td class="text-num">' + (c.input_tokens || 0) + ' / <span style="color: var(--accent-blue)">' + (c.cache_read_tokens || 0) + '</span></td>' +
