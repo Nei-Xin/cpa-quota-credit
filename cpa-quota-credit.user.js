@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         CPA Quota & Credit 额度与费用展示助手
 // @namespace    https://github.com/router-for-me/cpa-quota-credit
-// @version      1.0.3
-// @description  在 CLIProxyAPI 管理面板 (management.html#/quota) 账号卡片上实时呈现 sub2api 风格的请求数、Token 消耗与 A/U 费用徽章 (req / tokens / A $ / U $)
+// @version      1.0.4
+// @description  基于 sub2api 窗口统计算法，在 CLIProxyAPI 账号卡片上实时呈现当前重置周期内的请求数、Token 消耗与 A/U 费用徽章 (周期重置时自动归零)
 // @author       router-for-me
 // @match        *://*/management.html*
 // @match        https://cpa.zzii.de/management.html*
@@ -13,12 +13,11 @@
 (function () {
     'use strict';
 
-    console.log('[CPA Quota Credit] Userscript v1.0.3 starting...');
+    console.log('[CPA Quota Credit] Userscript v1.0.4 (sub2api window mode) loaded');
 
     // 注入 sub2api 风格 Pill 胶囊徽章样式
     const style = document.createElement('style');
     style.textContent = `
-        /* 胶囊徽章通用样式 */
         .cpa-pill {
             display: inline-flex !important;
             align-items: center !important;
@@ -35,10 +34,10 @@
             white-space: nowrap !important;
             margin-right: 6px !important;
             margin-bottom: 4px !important;
+            cursor: default !important;
             transition: all 0.2s ease !important;
         }
 
-        /* 暗黑主题适配 */
         @media (prefers-color-scheme: dark), (prefers-dark), [data-theme='dark'], html.dark {
             .cpa-pill {
                 background: rgba(255, 255, 255, 0.08) !important;
@@ -57,7 +56,6 @@
         .cpa-pill .pill-req { color: #0284c7 !important; }
         .cpa-pill .pill-tok { color: #10b981 !important; }
 
-        /* 卡片内徽章行容器 */
         .cpa-card-badge-container {
             display: flex !important;
             align-items: center !important;
@@ -71,7 +69,6 @@
     let cachedStats = null;
     let isFetching = false;
 
-    // 数值格式化
     function formatNumber(num) {
         if (!num || isNaN(num)) return '0';
         if (num >= 1000000000) return (num / 1000000000).toFixed(1) + 'B';
@@ -84,7 +81,6 @@
         return '$' + Number(amount || 0).toFixed(2);
     }
 
-    // 从公开 Resource 路径拉取统计数据 (无需 management key 鉴权，永不触发 403)
     async function fetchStats() {
         if (isFetching) return;
         isFetching = true;
@@ -100,37 +96,43 @@
                 const res = await fetch(url);
                 if (res.ok) {
                     cachedStats = await res.json();
-                    console.log('[CPA Quota Credit] Stats fetched successfully:', cachedStats);
                     renderBadges();
                     break;
                 }
-            } catch (e) {
-                // Try next endpoint
-            }
+            } catch (e) {}
         }
         isFetching = false;
     }
 
-    // 构建徽章 HTML
-    function buildPillBadgesHTML(reqCount, totalTokens, actualCost, userCost) {
+    // 构建 sub2api 胶囊徽章 (展示当前周期用量，tooltip 展示历史总计)
+    function buildPillBadgesHTML(wStats, totalStats) {
+        const req = wStats ? wStats.total_requests : 0;
+        const tok = wStats ? wStats.total_tokens : 0;
+        const actualCost = wStats ? wStats.actual_cost : 0;
+        const userCost = wStats ? wStats.user_cost : 0;
+
+        const allReq = totalStats ? totalStats.total_requests : req;
+        const allTok = totalStats ? totalStats.total_tokens : tok;
+        const allA = totalStats ? totalStats.actual_cost : actualCost;
+        const allU = totalStats ? totalStats.user_cost : userCost;
+
+        const tip = `【当前周期】请求: ${req} | Token: ${tok} | A成本: ${formatUSD(actualCost)} | U计费: ${formatUSD(userCost)}\n【全部历史】请求: ${allReq} | Token: ${allTok} | A成本: ${formatUSD(allA)} | U计费: ${formatUSD(allU)}`;
+
         return `
-            <div class="cpa-pill" title="该账号累计处理请求数"><span class="pill-req">${formatNumber(reqCount)} req</span></div>
-            <div class="cpa-pill" title="该账号累计 Token 消耗"><span class="pill-tok">${formatNumber(totalTokens)}</span></div>
-            <div class="cpa-pill" title="上游真实成本支出 (Actual Cost)"><span class="pill-prefix-a">A</span> ${formatUSD(actualCost)}</div>
-            <div class="cpa-pill" title="用户计费额度 (User Cost)"><span class="pill-prefix-u">U</span> ${formatUSD(userCost)}</div>
+            <div class="cpa-pill" title="${tip}"><span class="pill-req">${formatNumber(req)} req</span></div>
+            <div class="cpa-pill" title="${tip}"><span class="pill-tok">${formatNumber(tok)}</span></div>
+            <div class="cpa-pill" title="${tip}"><span class="pill-prefix-a">A</span> ${formatUSD(actualCost)}</div>
+            <div class="cpa-pill" title="${tip}"><span class="pill-prefix-u">U</span> ${formatUSD(userCost)}</div>
         `;
     }
 
-    // 模糊匹配账号
     function findAuthStat(accountText) {
         if (!cachedStats || !cachedStats.auths || !accountText) return null;
         const target = accountText.trim().toLowerCase().replace(/\.\.\.$/, '');
 
-        // 1. 精确匹配
         let matched = cachedStats.auths.find(a => a.auth_id && a.auth_id.toLowerCase() === target);
         if (matched) return matched;
 
-        // 2. 包含匹配
         matched = cachedStats.auths.find(a => {
             const aid = (a.auth_id || '').toLowerCase();
             return aid.includes(target) || target.includes(aid.replace(/\.json$/, ''));
@@ -138,20 +140,16 @@
         return matched;
     }
 
-    // 核心渲染逻辑：寻找卡片并注入徽章
     function renderBadges() {
         if (!cachedStats) return;
 
-        // 策略 1: 通过 "刷新额度" 按钮寻找父级卡片
         const allButtons = Array.from(document.querySelectorAll('button, div, span, a'));
         const refreshBtns = allButtons.filter(el => el.textContent && el.textContent.trim() === '刷新额度');
 
         refreshBtns.forEach(btn => {
-            // 向上寻找卡片容器
             let card = btn.parentElement;
             for (let i = 0; i < 6; i++) {
                 if (!card || card === document.body) break;
-                // 判断是否是卡片容器（包含账号名称或套餐等特征文字）
                 const text = card.textContent || '';
                 if (text.includes('codex-') || text.includes('claude-') || text.includes('gemini-') || text.includes('@') || text.includes('套餐')) {
                     break;
@@ -159,24 +157,28 @@
                 card = card.parentElement;
             }
 
-            if (!card || card.querySelector('.cpa-card-badge-container')) return;
+            if (!card) return;
 
-            // 提取账号名称
             const cardText = card.textContent || '';
             const match = cardText.match(/([a-zA-Z0-9_\-\.]+@[a-zA-Z0-9_\-\.]+|codex-[a-zA-Z0-9_\-\.]+|claude-[a-zA-Z0-9_\-\.]+|gemini-[a-zA-Z0-9_\-\.]+)/);
             const accountName = match ? match[1] : '';
 
             const stat = findAuthStat(accountName);
-            const req = stat ? stat.total_requests : 0;
-            const tok = stat ? stat.total_tokens : 0;
-            const actualCost = stat ? stat.actual_cost : 0;
-            const userCost = stat ? stat.user_cost : 0;
+            
+            // sub2api 算法：根据卡片类型选择当前周期窗口（周限额选 seven_day，月度/其他默认七天/今日窗口）
+            let windowStat = stat ? (stat.seven_day || stat.today || stat) : null;
+            let totalStat = stat ? { total_requests: stat.total_requests, total_tokens: stat.total_tokens, actual_cost: stat.actual_cost, user_cost: stat.user_cost } : null;
+
+            let existingContainer = card.querySelector('.cpa-card-badge-container');
+            if (existingContainer) {
+                existingContainer.innerHTML = buildPillBadgesHTML(windowStat, totalStat);
+                return;
+            }
 
             const badgeBox = document.createElement('div');
             badgeBox.className = 'cpa-card-badge-container';
-            badgeBox.innerHTML = buildPillBadgesHTML(req, tok, actualCost, userCost);
+            badgeBox.innerHTML = buildPillBadgesHTML(windowStat, totalStat);
 
-            // 插入到卡片中最佳位置（在"套餐"信息或限额进度条之前）
             const rows = Array.from(card.children);
             let inserted = false;
             for (let row of rows) {
@@ -192,19 +194,13 @@
         });
     }
 
-    // 监听 DOM 变动 (处理 Vue / SPA 异步加载)
     const observer = new MutationObserver(() => {
-        if (!cachedStats) {
-            fetchStats();
-        } else {
-            renderBadges();
-        }
+        if (!cachedStats) fetchStats();
+        else renderBadges();
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
 
-    // 初始执行 & 定时 8 秒增量同步
     fetchStats();
     setInterval(fetchStats, 8000);
-
 })();

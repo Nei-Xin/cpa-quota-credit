@@ -33,40 +33,55 @@ type Record struct {
 	Failed    bool                   `json:"failed"`
 }
 
-type GlobalSummary struct {
-	TotalRequests int64     `json:"total_requests"`
-	TotalTokens   int64     `json:"total_tokens"`
-	ActualCost    float64   `json:"actual_cost"`
-	UserCost      float64   `json:"user_cost"`
-	LastUpdated   time.Time `json:"last_updated"`
-}
-
-type KeyStat struct {
-	APIKey        string    `json:"api_key"`
-	TotalRequests int64     `json:"total_requests"`
-	TotalTokens   int64     `json:"total_tokens"`
-	ActualCost    float64   `json:"actual_cost"`
-	UserCost      float64   `json:"user_cost"`
-	LastActive    time.Time `json:"last_active"`
-}
-
-type AuthStat struct {
-	AuthID        string    `json:"auth_id"`
-	Provider      string    `json:"provider"`
-	TotalRequests int64     `json:"total_requests"`
-	TotalTokens   int64     `json:"total_tokens"`
-	ActualCost    float64   `json:"actual_cost"`
-	UserCost      float64   `json:"user_cost"`
-	LastActive    time.Time `json:"last_active"`
-}
-
-type ModelStat struct {
-	Model         string  `json:"model"`
-	Provider      string  `json:"provider"`
+type WindowStat struct {
 	TotalRequests int64   `json:"total_requests"`
 	TotalTokens   int64   `json:"total_tokens"`
 	ActualCost    float64 `json:"actual_cost"`
 	UserCost      float64 `json:"user_cost"`
+}
+
+type GlobalSummary struct {
+	TotalRequests int64       `json:"total_requests"`
+	TotalTokens   int64       `json:"total_tokens"`
+	ActualCost    float64     `json:"actual_cost"`
+	UserCost      float64     `json:"user_cost"`
+	Today         *WindowStat `json:"today,omitempty"`
+	SevenDay      *WindowStat `json:"seven_day,omitempty"`
+	LastUpdated   time.Time   `json:"last_updated"`
+}
+
+type KeyStat struct {
+	APIKey        string      `json:"api_key"`
+	TotalRequests int64       `json:"total_requests"`
+	TotalTokens   int64       `json:"total_tokens"`
+	ActualCost    float64     `json:"actual_cost"`
+	UserCost      float64     `json:"user_cost"`
+	Today         *WindowStat `json:"today,omitempty"`
+	SevenDay      *WindowStat `json:"seven_day,omitempty"`
+	LastActive    time.Time   `json:"last_active"`
+}
+
+type AuthStat struct {
+	AuthID        string      `json:"auth_id"`
+	Provider      string      `json:"provider"`
+	TotalRequests int64       `json:"total_requests"`
+	TotalTokens   int64       `json:"total_tokens"`
+	ActualCost    float64     `json:"actual_cost"`
+	UserCost      float64     `json:"user_cost"`
+	Today         *WindowStat `json:"today,omitempty"`
+	SevenDay      *WindowStat `json:"seven_day,omitempty"`
+	LastActive    time.Time   `json:"last_active"`
+}
+
+type ModelStat struct {
+	Model         string      `json:"model"`
+	Provider      string      `json:"provider"`
+	TotalRequests int64       `json:"total_requests"`
+	TotalTokens   int64       `json:"total_tokens"`
+	ActualCost    float64     `json:"actual_cost"`
+	UserCost      float64     `json:"user_cost"`
+	Today         *WindowStat `json:"today,omitempty"`
+	SevenDay      *WindowStat `json:"seven_day,omitempty"`
 }
 
 type DailyStat struct {

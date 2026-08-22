@@ -1,6 +1,6 @@
 package dashboard
 
-// HTMLDashboardTemplate provides the modern dashboard UI with sub2api badge style
+// HTMLDashboardTemplate provides the modern dashboard UI with sub2api badge style and time window switcher
 const HTMLDashboardTemplate = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -24,10 +24,30 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
         body { background-color: var(--bg-color); color: var(--text-primary); padding: 24px; }
         .container { max-width: 1320px; margin: 0 auto; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--card-border); }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--card-border); flex-wrap: wrap; gap: 12px; }
         .title-group h1 { font-size: 22px; font-weight: 600; color: var(--text-primary); }
         .title-group p { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
         
+        /* Time window tabs */
+        .window-tabs { display: inline-flex; background: rgba(0,0,0,0.3); padding: 3px; border-radius: 8px; border: 1px solid var(--card-border); }
+        .tab-btn {
+            background: transparent;
+            color: var(--text-secondary);
+            border: none;
+            padding: 5px 12px;
+            font-size: 12.5px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tab-btn.active {
+            background: #3b82f6;
+            color: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        .tab-btn:hover:not(.active) { color: var(--text-primary); }
+
         /* sub2api Style Pill Badges */
         .badge-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
         .sub2api-pill {
@@ -50,16 +70,16 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
         .sub2api-pill .highlight-u { color: var(--accent-amber); margin-right: 4px; }
         
         .refresh-btn {
-            background: #3b82f6;
-            color: white;
-            border: none;
+            background: #334155;
+            color: #e2e8f0;
+            border: 1px solid var(--card-border);
             padding: 6px 14px;
             border-radius: 6px;
             font-size: 13px;
             cursor: pointer;
             transition: 0.2s;
         }
-        .refresh-btn:hover { background: #2563eb; }
+        .refresh-btn:hover { background: #475569; }
 
         /* Grid */
         .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }
@@ -92,9 +112,17 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
         <div class="header">
             <div class="title-group">
                 <h1>CLIProxyAPI 额度与计费控制中心</h1>
-                <p>实时基于 sub2api 算法核算 Token 消耗与多维账单 (A: 上游真实成本 | U: 客户端计费额度)</p>
+                <p>实时基于 sub2api 窗口算法核算 Token 消耗与多维账单 (A: 上游真实成本 | U: 客户端计费额度)</p>
             </div>
+            
             <div class="badge-bar">
+                <!-- Time window switcher -->
+                <div class="window-tabs">
+                    <button class="tab-btn active" id="tab-week" onclick="switchWindow('week')">7天配额周期</button>
+                    <button class="tab-btn" id="tab-today" onclick="switchWindow('today')">今日 (0点起)</button>
+                    <button class="tab-btn" id="tab-total" onclick="switchWindow('total')">全部历史</button>
+                </div>
+
                 <!-- 4 Pills Aligned with sub2api UI -->
                 <div class="sub2api-pill" id="pill-req">0 req</div>
                 <div class="sub2api-pill" id="pill-tok">0</div>
@@ -185,6 +213,19 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
     </div>
 
     <script>
+        let currentWindow = 'week'; // 'week' | 'today' | 'total'
+        let cachedFullData = null;
+
+        function switchWindow(w) {
+            currentWindow = w;
+            document.getElementById('tab-week').classList.toggle('active', w === 'week');
+            document.getElementById('tab-today').classList.toggle('active', w === 'today');
+            document.getElementById('tab-total').classList.toggle('active', w === 'total');
+            if (cachedFullData) {
+                renderDashboard(cachedFullData);
+            }
+        }
+
         function formatNumber(num) {
             if (!num || isNaN(num)) return '0';
             if (num >= 1000000000) return (num / 1000000000).toFixed(1) + 'B';
@@ -201,13 +242,38 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
             return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
 
-        // 脱敏遮蔽 API Key (避免明文泄漏)
         function maskAPIKey(key) {
             if (!key) return 'anonymous';
             const k = String(key).trim();
             if (k.length <= 6) return '****';
             if (k.length <= 10) return k.substring(0, 2) + '****' + k.substring(k.length - 2);
             return k.substring(0, 4) + '****' + k.substring(k.length - 4);
+        }
+
+        function extractWindowStats(item, windowType) {
+            if (!item) return { requests: 0, tokens: 0, actual_cost: 0, user_cost: 0 };
+            if (windowType === 'today' && item.today) {
+                return {
+                    requests: item.today.total_requests || 0,
+                    tokens: item.today.total_tokens || 0,
+                    actual_cost: item.today.actual_cost || 0,
+                    user_cost: item.today.user_cost || 0
+                };
+            }
+            if (windowType === 'week' && item.seven_day) {
+                return {
+                    requests: item.seven_day.total_requests || 0,
+                    tokens: item.seven_day.total_tokens || 0,
+                    actual_cost: item.seven_day.actual_cost || 0,
+                    user_cost: item.seven_day.user_cost || 0
+                };
+            }
+            return {
+                requests: item.total_requests || 0,
+                tokens: item.total_tokens || 0,
+                actual_cost: item.actual_cost || 0,
+                user_cost: item.user_cost || 0
+            };
         }
 
         async function fetchStats() {
@@ -221,42 +287,38 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
                 try {
                     const res = await fetch(endpoints[i]);
                     if (res.ok) {
-                        const data = await res.json();
-                        renderDashboard(data);
+                        cachedFullData = await res.json();
+                        renderDashboard(cachedFullData);
                         return;
                     }
-                } catch (err) {
-                    // Try next endpoint
-                }
+                } catch (err) {}
             }
-            
-            // If all failed, show default empty view
-            renderDashboard({ summary: { total_requests: 0, total_tokens: 0, actual_cost: 0, user_cost: 0 }, keys: [], auths: [], models: [], recent_logs: [] });
         }
 
         function renderDashboard(data) {
-            const summary = data.summary || { total_requests: 0, total_tokens: 0, actual_cost: 0, user_cost: 0 };
+            const summaryStats = extractWindowStats(data.summary, currentWindow);
             
             // Render 4 Pill Badges
-            document.getElementById('pill-req').innerHTML = formatNumber(summary.total_requests) + ' req';
-            document.getElementById('pill-tok').innerHTML = formatNumber(summary.total_tokens);
-            document.getElementById('pill-a').innerHTML = '<span class="highlight-a">A</span> ' + formatUSD(summary.actual_cost);
-            document.getElementById('pill-u').innerHTML = '<span class="highlight-u">U</span> ' + formatUSD(summary.user_cost);
+            document.getElementById('pill-req').innerHTML = formatNumber(summaryStats.requests) + ' req';
+            document.getElementById('pill-tok').innerHTML = formatNumber(summaryStats.tokens);
+            document.getElementById('pill-a').innerHTML = '<span class="highlight-a">A</span> ' + formatUSD(summaryStats.actual_cost);
+            document.getElementById('pill-u').innerHTML = '<span class="highlight-u">U</span> ' + formatUSD(summaryStats.user_cost);
 
             // 1. Keys Table
             const keyBody = document.getElementById('key-table-body');
             if (!data.keys || data.keys.length === 0) {
-                keyBody.innerHTML = '<tr><td colspan="4" class="empty-hint">暂无 API Key 记录 (尚未发起请求)</td></tr>';
+                keyBody.innerHTML = '<tr><td colspan="4" class="empty-hint">暂无 API Key 记录</td></tr>';
             } else {
                 var html = '';
                 for (var i = 0; i < data.keys.length; i++) {
                     var k = data.keys[i];
+                    var ws = extractWindowStats(k, currentWindow);
                     var masked = maskAPIKey(k.api_key);
                     html += '<tr>' +
                         '<td><span class="badge-cell">' + escapeHTML(masked) + '</span></td>' +
-                        '<td class="text-num">' + (k.total_requests || 0).toLocaleString() + '</td>' +
-                        '<td class="text-num">' + formatNumber(k.total_tokens) + '</td>' +
-                        '<td class="text-num cost-u">' + formatUSD(k.user_cost) + '</td>' +
+                        '<td class="text-num">' + (ws.requests || 0).toLocaleString() + '</td>' +
+                        '<td class="text-num">' + formatNumber(ws.tokens) + '</td>' +
+                        '<td class="text-num cost-u">' + formatUSD(ws.user_cost) + '</td>' +
                         '</tr>';
                 }
                 keyBody.innerHTML = html;
@@ -265,16 +327,17 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
             // 2. Upstream Auths Table
             const authBody = document.getElementById('auth-table-body');
             if (!data.auths || data.auths.length === 0) {
-                authBody.innerHTML = '<tr><td colspan="4" class="empty-hint">暂无上游账号记录 (尚未发起请求)</td></tr>';
+                authBody.innerHTML = '<tr><td colspan="4" class="empty-hint">暂无上游账号记录</td></tr>';
             } else {
                 var aHtml = '';
                 for (var a = 0; a < data.auths.length; a++) {
                     var au = data.auths[a];
+                    var aws = extractWindowStats(au, currentWindow);
                     aHtml += '<tr>' +
                         '<td><span class="badge-cell badge-auth" title="' + escapeHTML(au.auth_id) + '">' + escapeHTML(au.auth_id) + '</span></td>' +
-                        '<td class="text-num">' + (au.total_requests || 0).toLocaleString() + '</td>' +
-                        '<td class="text-num">' + formatNumber(au.total_tokens) + '</td>' +
-                        '<td class="text-num cost-a">' + formatUSD(au.actual_cost) + '</td>' +
+                        '<td class="text-num">' + (aws.requests || 0).toLocaleString() + '</td>' +
+                        '<td class="text-num">' + formatNumber(aws.tokens) + '</td>' +
+                        '<td class="text-num cost-a">' + formatUSD(aws.actual_cost) + '</td>' +
                         '</tr>';
                 }
                 authBody.innerHTML = aHtml;
@@ -283,16 +346,17 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
             // 3. Models Table
             const modelBody = document.getElementById('model-table-body');
             if (!data.models || data.models.length === 0) {
-                modelBody.innerHTML = '<tr><td colspan="4" class="empty-hint">暂无模型记录 (尚未发起请求)</td></tr>';
+                modelBody.innerHTML = '<tr><td colspan="4" class="empty-hint">暂无模型记录</td></tr>';
             } else {
                 var mHtml = '';
                 for (var j = 0; j < data.models.length; j++) {
                     var m = data.models[j];
+                    var mws = extractWindowStats(m, currentWindow);
                     mHtml += '<tr>' +
                         '<td><strong>' + escapeHTML(m.model) + '</strong></td>' +
-                        '<td class="text-num">' + (m.total_requests || 0).toLocaleString() + '</td>' +
-                        '<td class="text-num">' + formatNumber(m.total_tokens) + '</td>' +
-                        '<td class="text-num cost-u">' + formatUSD(m.user_cost) + '</td>' +
+                        '<td class="text-num">' + (mws.requests || 0).toLocaleString() + '</td>' +
+                        '<td class="text-num">' + formatNumber(mws.tokens) + '</td>' +
+                        '<td class="text-num cost-u">' + formatUSD(mws.user_cost) + '</td>' +
                         '</tr>';
                 }
                 modelBody.innerHTML = mHtml;
@@ -301,7 +365,7 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
             // 4. Recent Logs Table
             const logBody = document.getElementById('log-table-body');
             if (!data.recent_logs || data.recent_logs.length === 0) {
-                logBody.innerHTML = '<tr><td colspan="9" class="empty-hint">暂无请求记录 (发送任意模型请求后实时显示)</td></tr>';
+                logBody.innerHTML = '<tr><td colspan="9" class="empty-hint">暂无请求记录</td></tr>';
             } else {
                 var lHtml = '';
                 for (var x = 0; x < data.recent_logs.length; x++) {
