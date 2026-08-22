@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CPA Quota & Credit 额度与费用展示助手
 // @namespace    https://github.com/router-for-me/cpa-quota-credit
-// @version      1.0.1
+// @version      1.0.3
 // @description  在 CLIProxyAPI 管理面板 (management.html#/quota) 账号卡片上实时呈现 sub2api 风格的请求数、Token 消耗与 A/U 费用徽章 (req / tokens / A $ / U $)
 // @author       router-for-me
 // @match        *://*/management.html*
@@ -13,84 +13,65 @@
 (function () {
     'use strict';
 
-    console.log('[CPA Quota Credit] Userscript loaded v1.0.1');
+    console.log('[CPA Quota Credit] Userscript v1.0.3 starting...');
 
-    // 样式注入 (sub2api 风格 Pill 胶囊徽章)
+    // 注入 sub2api 风格 Pill 胶囊徽章样式
     const style = document.createElement('style');
     style.textContent = `
-        /* 顶部全局徽章栏 */
-        .cpa-global-badge-bar {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin: 12px 0 16px 0;
-            padding: 8px 14px;
-            background: rgba(30, 41, 59, 0.7);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
-            width: fit-content;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-        }
-        .cpa-global-title {
-            font-size: 13px;
-            font-weight: 600;
-            color: #94a3b8;
-            margin-right: 4px;
-        }
-
         /* 胶囊徽章通用样式 */
         .cpa-pill {
-            display: inline-flex;
-            align-items: center;
-            padding: 2px 8px;
-            background: rgba(241, 245, 249, 0.9);
-            border: 1px solid rgba(203, 213, 225, 0.8);
-            border-radius: 6px;
-            font-size: 11.5px;
-            font-weight: 600;
-            color: #334155;
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-            line-height: 1.4;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-            white-space: nowrap;
-            transition: all 0.2s ease;
+            display: inline-flex !important;
+            align-items: center !important;
+            padding: 3px 8px !important;
+            background: #f1f5f9 !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 6px !important;
+            font-size: 12px !important;
+            font-weight: 600 !important;
+            color: #334155 !important;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+            line-height: 1.4 !important;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+            white-space: nowrap !important;
+            margin-right: 6px !important;
+            margin-bottom: 4px !important;
+            transition: all 0.2s ease !important;
         }
-        @media (prefers-color-scheme: dark), (prefers-dark) {
+
+        /* 暗黑主题适配 */
+        @media (prefers-color-scheme: dark), (prefers-dark), [data-theme='dark'], html.dark {
             .cpa-pill {
-                background: rgba(255, 255, 255, 0.08);
-                border-color: rgba(255, 255, 255, 0.15);
-                color: #cbd5e1;
+                background: rgba(255, 255, 255, 0.08) !important;
+                border-color: rgba(255, 255, 255, 0.15) !important;
+                color: #cbd5e1 !important;
             }
         }
 
         .cpa-pill:hover {
             transform: translateY(-1px);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.12) !important;
         }
 
-        .cpa-pill .pill-prefix-a { color: #a855f7; font-weight: 700; margin-right: 3px; }
-        .cpa-pill .pill-prefix-u { color: #f59e0b; font-weight: 700; margin-right: 3px; }
-        .cpa-pill .pill-req { color: #0284c7; }
-        .cpa-pill .pill-tok { color: #10b981; }
+        .cpa-pill .pill-prefix-a { color: #a855f7 !important; font-weight: 700 !important; margin-right: 3px !important; }
+        .cpa-pill .pill-prefix-u { color: #f59e0b !important; font-weight: 700 !important; margin-right: 3px !important; }
+        .cpa-pill .pill-req { color: #0284c7 !important; }
+        .cpa-pill .pill-tok { color: #10b981 !important; }
 
-        /* 卡片内徽章容器 */
+        /* 卡片内徽章行容器 */
         .cpa-card-badge-container {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            flex-wrap: wrap;
-            margin: 6px 0 8px 0;
-            padding: 4px 0;
+            display: flex !important;
+            align-items: center !important;
+            flex-wrap: wrap !important;
+            margin: 8px 0 10px 0 !important;
+            padding: 4px 0 !important;
         }
     `;
     document.head.appendChild(style);
 
     let cachedStats = null;
     let isFetching = false;
-    let authFailed = false;
 
-    // 工具函数：数值格式化
+    // 数值格式化
     function formatNumber(num) {
         if (!num || isNaN(num)) return '0';
         if (num >= 1000000000) return (num / 1000000000).toFixed(1) + 'B';
@@ -103,143 +84,87 @@
         return '$' + Number(amount || 0).toFixed(2);
     }
 
-    // 智能探测 CPA 管理密钥
-    let detectedToken = '';
-    
-    // 监听全局 fetch 抓取管理面板已登录携带的 Token
-    const originalFetch = window.fetch;
-    window.fetch = async function (...args) {
-        try {
-            const [url, config] = args;
-            if (config && config.headers) {
-                let token = '';
-                if (typeof config.headers.get === 'function') {
-                    token = config.headers.get('Authorization') || config.headers.get('X-Management-Key');
-                } else if (config.headers['Authorization']) {
-                    token = config.headers['Authorization'];
-                } else if (config.headers['X-Management-Key']) {
-                    token = config.headers['X-Management-Key'];
-                }
-                if (token && token.startsWith('Bearer ')) {
-                    detectedToken = token.replace('Bearer ', '').trim();
-                    authFailed = false;
-                } else if (token) {
-                    detectedToken = token.trim();
-                    authFailed = false;
-                }
-            }
-        } catch (e) {}
-        return originalFetch.apply(this, args);
-    };
-
-    function getManagementKey() {
-        if (detectedToken) return detectedToken;
-        const candidates = [
-            'management_secret_key',
-            'secret_key',
-            'cpa_secret_key',
-            'management_key',
-            'auth_key',
-            'token',
-            'cpa_token'
-        ];
-        for (const k of candidates) {
-            const v = localStorage.getItem(k) || sessionStorage.getItem(k);
-            if (v && v.trim()) return v.trim();
-        }
-        return '';
-    }
-
-    // 从 CPA 后端拉取统计数据 (带熔断机制，绝不重复触发 403 封禁)
+    // 从公开 Resource 路径拉取统计数据 (无需 management key 鉴权，永不触发 403)
     async function fetchStats() {
-        if (isFetching || authFailed) return;
+        if (isFetching) return;
         isFetching = true;
-        try {
-            const headers = {};
-            const key = getManagementKey();
-            if (key) {
-                headers['Authorization'] = 'Bearer ' + key;
-                headers['X-Management-Key'] = key;
-            }
+        
+        const endpoints = [
+            '/v0/resource/plugins/cpa-quota-credit/stats',
+            '/v0/resource/plugins/cpa-quota-credit/dashboard?format=json',
+            window.location.origin + '/v0/resource/plugins/cpa-quota-credit/stats'
+        ];
 
-            const res = await fetch('/v0/management/plugins/cpa-quota-credit/stats', {
-                method: 'GET',
-                headers: headers
-            });
-
-            if (res.ok) {
-                cachedStats = await res.json();
-                authFailed = false;
-                renderAllBadges();
-            } else if (res.status === 403 || res.status === 401) {
-                // 遇到 403/401 立即熔断暂停，等待下次用户登录/输入 Key 抓取成功后再请求，绝不刷屏造成封禁
-                authFailed = true;
-                console.warn('[CPA Quota Credit] 管理接口需要鉴权，将在捕获管理密钥后自动重试');
+        for (let url of endpoints) {
+            try {
+                const res = await fetch(url);
+                if (res.ok) {
+                    cachedStats = await res.json();
+                    console.log('[CPA Quota Credit] Stats fetched successfully:', cachedStats);
+                    renderBadges();
+                    break;
+                }
+            } catch (e) {
+                // Try next endpoint
             }
-        } catch (e) {
-            console.error('[CPA Quota Credit] Fetch stats error:', e);
-        } finally {
-            isFetching = false;
         }
+        isFetching = false;
     }
 
-    // 构建 4 枚 Pill 徽章 HTML
+    // 构建徽章 HTML
     function buildPillBadgesHTML(reqCount, totalTokens, actualCost, userCost) {
         return `
-            <div class="cpa-pill" title="总请求次数"><span class="pill-req">${formatNumber(reqCount)} req</span></div>
-            <div class="cpa-pill" title="总 Token 消耗"><span class="pill-tok">${formatNumber(totalTokens)}</span></div>
-            <div class="cpa-pill" title="上游真实成本 (Actual Cost)"><span class="pill-prefix-a">A</span> ${formatUSD(actualCost)}</div>
+            <div class="cpa-pill" title="该账号累计处理请求数"><span class="pill-req">${formatNumber(reqCount)} req</span></div>
+            <div class="cpa-pill" title="该账号累计 Token 消耗"><span class="pill-tok">${formatNumber(totalTokens)}</span></div>
+            <div class="cpa-pill" title="上游真实成本支出 (Actual Cost)"><span class="pill-prefix-a">A</span> ${formatUSD(actualCost)}</div>
             <div class="cpa-pill" title="用户计费额度 (User Cost)"><span class="pill-prefix-u">U</span> ${formatUSD(userCost)}</div>
         `;
     }
 
-    // 匹配上游账号数据
-    function findAuthStat(accountName) {
-        if (!cachedStats || !cachedStats.auths || !accountName) return null;
-        const target = accountName.trim().toLowerCase();
+    // 模糊匹配账号
+    function findAuthStat(accountText) {
+        if (!cachedStats || !cachedStats.auths || !accountText) return null;
+        const target = accountText.trim().toLowerCase().replace(/\.\.\.$/, '');
 
+        // 1. 精确匹配
         let matched = cachedStats.auths.find(a => a.auth_id && a.auth_id.toLowerCase() === target);
         if (matched) return matched;
 
-        const cleanName = target.replace(/\.\.\.$/, '').trim();
+        // 2. 包含匹配
         matched = cachedStats.auths.find(a => {
             const aid = (a.auth_id || '').toLowerCase();
-            return aid.includes(cleanName) || cleanName.includes(aid);
+            return aid.includes(target) || target.includes(aid.replace(/\.json$/, ''));
         });
         return matched;
     }
 
-    // 渲染卡片内徽章与全局徽章
-    function renderAllBadges() {
+    // 核心渲染逻辑：寻找卡片并注入徽章
+    function renderBadges() {
         if (!cachedStats) return;
 
-        // 1. 渲染全局总额度条
-        const quotaContainer = document.querySelector('.quota-container, .quota-view, .content-container, main, #app');
-        if (quotaContainer && !document.getElementById('cpa-global-quota-bar')) {
-            const summary = cachedStats.summary || { total_requests: 0, total_tokens: 0, actual_cost: 0, user_cost: 0 };
-            const bar = document.createElement('div');
-            bar.id = 'cpa-global-quota-bar';
-            bar.className = 'cpa-global-badge-bar';
-            bar.innerHTML = `
-                <span class="cpa-global-title">📊 总额度消耗:</span>
-                ${buildPillBadgesHTML(summary.total_requests, summary.total_tokens, summary.actual_cost, summary.user_cost)}
-            `;
-            quotaContainer.insertBefore(bar, quotaContainer.firstChild);
-        }
+        // 策略 1: 通过 "刷新额度" 按钮寻找父级卡片
+        const allButtons = Array.from(document.querySelectorAll('button, div, span, a'));
+        const refreshBtns = allButtons.filter(el => el.textContent && el.textContent.trim() === '刷新额度');
 
-        // 2. 遍历注入每个卡片
-        const cards = document.querySelectorAll('.el-card, .n-card, .quota-card, [class*="card"]');
-        cards.forEach(card => {
-            if (card.querySelector('.cpa-card-badge-container')) return;
-            const textNodes = Array.from(card.querySelectorAll('*')).map(el => el.textContent.trim());
-            let accountName = '';
-            for (const text of textNodes) {
-                if (text.includes('codex-') || text.includes('claude-') || text.includes('gemini-') || text.includes('@') || text.includes('.json')) {
-                    accountName = text.split('\n')[0].trim();
+        refreshBtns.forEach(btn => {
+            // 向上寻找卡片容器
+            let card = btn.parentElement;
+            for (let i = 0; i < 6; i++) {
+                if (!card || card === document.body) break;
+                // 判断是否是卡片容器（包含账号名称或套餐等特征文字）
+                const text = card.textContent || '';
+                if (text.includes('codex-') || text.includes('claude-') || text.includes('gemini-') || text.includes('@') || text.includes('套餐')) {
                     break;
                 }
+                card = card.parentElement;
             }
-            if (!accountName) return;
+
+            if (!card || card.querySelector('.cpa-card-badge-container')) return;
+
+            // 提取账号名称
+            const cardText = card.textContent || '';
+            const match = cardText.match(/([a-zA-Z0-9_\-\.]+@[a-zA-Z0-9_\-\.]+|codex-[a-zA-Z0-9_\-\.]+|claude-[a-zA-Z0-9_\-\.]+|gemini-[a-zA-Z0-9_\-\.]+)/);
+            const accountName = match ? match[1] : '';
 
             const stat = findAuthStat(accountName);
             const req = stat ? stat.total_requests : 0;
@@ -247,32 +172,39 @@
             const actualCost = stat ? stat.actual_cost : 0;
             const userCost = stat ? stat.user_cost : 0;
 
-            const container = document.createElement('div');
-            container.className = 'cpa-card-badge-container';
-            container.innerHTML = buildPillBadgesHTML(req, tok, actualCost, userCost);
+            const badgeBox = document.createElement('div');
+            badgeBox.className = 'cpa-card-badge-container';
+            badgeBox.innerHTML = buildPillBadgesHTML(req, tok, actualCost, userCost);
 
-            const progressBar = card.querySelector('.el-progress, [class*="progress"], [class*="limit"]');
-            if (progressBar && progressBar.parentNode) {
-                progressBar.parentNode.insertBefore(container, progressBar);
-            } else {
-                card.appendChild(container);
+            // 插入到卡片中最佳位置（在"套餐"信息或限额进度条之前）
+            const rows = Array.from(card.children);
+            let inserted = false;
+            for (let row of rows) {
+                if (row.textContent && (row.textContent.includes('套餐') || row.textContent.includes('限额') || row.textContent.includes('重置'))) {
+                    card.insertBefore(badgeBox, row);
+                    inserted = true;
+                    break;
+                }
+            }
+            if (!inserted) {
+                card.insertBefore(badgeBox, card.firstChild);
             }
         });
     }
 
-    // 监听 SPA 路由变动与 DOM 渲染
-    let timer = null;
+    // 监听 DOM 变动 (处理 Vue / SPA 异步加载)
     const observer = new MutationObserver(() => {
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(() => {
-            if (window.location.href.includes('quota') || window.location.href.includes('management')) {
-                if (!cachedStats) fetchStats();
-                else renderAllBadges();
-            }
-        }, 300);
+        if (!cachedStats) {
+            fetchStats();
+        } else {
+            renderBadges();
+        }
     });
+
     observer.observe(document.body, { childList: true, subtree: true });
 
+    // 初始执行 & 定时 8 秒增量同步
     fetchStats();
-    setInterval(fetchStats, 15000);
+    setInterval(fetchStats, 8000);
+
 })();
