@@ -243,7 +243,7 @@ func handleMethod(method string, reqBody []byte) ([]byte, error) {
 			Resources: []abi.ResourceRoute{
 				{
 					Path:        "/dashboard",
-					Menu:        "Quota & Credit",
+					Menu:        "额度与计费",
 					Description: "CLIProxyAPI 额度与计费控制看板 (sub2api 计算标准)",
 				},
 				{
