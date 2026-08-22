@@ -6,7 +6,7 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CLIProxyAPI 额度与计费统计看板 (CPA Quota & Credit)</title>
+    <title>CLIProxyAPI 额度与计费控制中心 (CPA Quota & Credit)</title>
     <style>
         :root {
             --bg-color: #0f172a;
@@ -84,7 +84,7 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
         .text-num { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
         .cost-u { color: var(--accent-amber); font-weight: 600; }
         .cost-a { color: var(--accent-purple); font-weight: 600; }
-        .empty-hint { text-align: center; color: var(--text-secondary); padding: 20px; }
+        .empty-hint { text-align: center; color: var(--text-secondary); padding: 20px; font-style: italic; }
     </style>
 </head>
 <body>
@@ -96,8 +96,8 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
             </div>
             <div class="badge-bar">
                 <!-- 4 Pills Aligned with sub2api UI -->
-                <div class="sub2api-pill" id="pill-req">-- req</div>
-                <div class="sub2api-pill" id="pill-tok">--</div>
+                <div class="sub2api-pill" id="pill-req">0 req</div>
+                <div class="sub2api-pill" id="pill-tok">0</div>
                 <div class="sub2api-pill" id="pill-a"><span class="highlight-a">A</span> $0.00</div>
                 <div class="sub2api-pill" id="pill-u"><span class="highlight-u">U</span> $0.00</div>
                 <button class="refresh-btn" onclick="fetchStats()">刷新</button>
@@ -118,7 +118,7 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
                         </tr>
                     </thead>
                     <tbody id="key-table-body">
-                        <tr><td colspan="4" class="empty-hint">加载中...</td></tr>
+                        <tr><td colspan="4" class="empty-hint">暂无记录</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -136,7 +136,7 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
                         </tr>
                     </thead>
                     <tbody id="auth-table-body">
-                        <tr><td colspan="4" class="empty-hint">加载中...</td></tr>
+                        <tr><td colspan="4" class="empty-hint">暂无记录</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -154,7 +154,7 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
                         </tr>
                     </thead>
                     <tbody id="model-table-body">
-                        <tr><td colspan="4" class="empty-hint">加载中...</td></tr>
+                        <tr><td colspan="4" class="empty-hint">暂无记录</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -186,10 +186,11 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
 
     <script>
         function formatNumber(num) {
+            if (!num || isNaN(num)) return '0';
             if (num >= 1000000000) return (num / 1000000000).toFixed(1) + 'B';
             if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
             if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-            return (num || 0).toLocaleString();
+            return num.toLocaleString();
         }
 
         function formatUSD(amount) {
@@ -201,14 +202,27 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
         }
 
         async function fetchStats() {
-            try {
-                const res = await fetch('/v0/management/plugins/cpa-quota-credit/stats');
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                const data = await res.json();
-                renderDashboard(data);
-            } catch (err) {
-                console.error('Failed to fetch stats:', err);
+            const endpoints = [
+                '/v0/resource/plugins/cpa-quota-credit/stats',
+                '/v0/resource/plugins/cpa-quota-credit/dashboard?format=json',
+                '/v0/management/plugins/cpa-quota-credit/stats'
+            ];
+            
+            for (let i = 0; i < endpoints.length; i++) {
+                try {
+                    const res = await fetch(endpoints[i]);
+                    if (res.ok) {
+                        const data = await res.json();
+                        renderDashboard(data);
+                        return;
+                    }
+                } catch (err) {
+                    // Try next endpoint
+                }
             }
+            
+            // If all failed, show default empty view
+            renderDashboard({ summary: { total_requests: 0, total_tokens: 0, actual_cost: 0, user_cost: 0 }, keys: [], auths: [], models: [], recent_logs: [] });
         }
 
         function renderDashboard(data) {
@@ -223,7 +237,7 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
             // 1. Keys Table
             const keyBody = document.getElementById('key-table-body');
             if (!data.keys || data.keys.length === 0) {
-                keyBody.innerHTML = '<tr><td colspan="4" class="empty-hint">暂无 API Key 记录</td></tr>';
+                keyBody.innerHTML = '<tr><td colspan="4" class="empty-hint">暂无 API Key 记录 (尚未发起请求)</td></tr>';
             } else {
                 var html = '';
                 for (var i = 0; i < data.keys.length; i++) {
@@ -241,7 +255,7 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
             // 2. Upstream Auths Table
             const authBody = document.getElementById('auth-table-body');
             if (!data.auths || data.auths.length === 0) {
-                authBody.innerHTML = '<tr><td colspan="4" class="empty-hint">暂无上游账号记录</td></tr>';
+                authBody.innerHTML = '<tr><td colspan="4" class="empty-hint">暂无上游账号记录 (尚未发起请求)</td></tr>';
             } else {
                 var aHtml = '';
                 for (var a = 0; a < data.auths.length; a++) {
@@ -259,7 +273,7 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
             // 3. Models Table
             const modelBody = document.getElementById('model-table-body');
             if (!data.models || data.models.length === 0) {
-                modelBody.innerHTML = '<tr><td colspan="4" class="empty-hint">暂无模型记录</td></tr>';
+                modelBody.innerHTML = '<tr><td colspan="4" class="empty-hint">暂无模型记录 (尚未发起请求)</td></tr>';
             } else {
                 var mHtml = '';
                 for (var j = 0; j < data.models.length; j++) {
@@ -277,7 +291,7 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
             // 4. Recent Logs Table
             const logBody = document.getElementById('log-table-body');
             if (!data.recent_logs || data.recent_logs.length === 0) {
-                logBody.innerHTML = '<tr><td colspan="9" class="empty-hint">暂无最新请求记录</td></tr>';
+                logBody.innerHTML = '<tr><td colspan="9" class="empty-hint">暂无请求记录 (发送任意模型请求后实时显示)</td></tr>';
             } else {
                 var lHtml = '';
                 for (var x = 0; x < data.recent_logs.length; x++) {

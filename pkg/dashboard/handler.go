@@ -20,19 +20,8 @@ func NewHandler(store *storage.Store) *Handler {
 func (h *Handler) HandleRequest(req abi.ManagementRequest) abi.ManagementResponse {
 	path := strings.TrimSpace(req.Path)
 
-	// 1. Dashboard UI HTML Resource
-	if path == "" || path == "/" || strings.HasSuffix(path, "/dashboard") || strings.HasSuffix(path, "/status") {
-		return abi.ManagementResponse{
-			StatusCode: http.StatusOK,
-			Headers: http.Header{
-				"Content-Type": []string{"text/html; charset=utf-8"},
-			},
-			Body: []byte(HTMLDashboardTemplate),
-		}
-	}
-
-	// 2. Stats JSON API
-	if strings.HasSuffix(path, "/stats") || strings.HasSuffix(path, "/api/stats") {
+	// 1. Stats JSON API (Checked first or when query parameter format=json)
+	if strings.HasSuffix(path, "/stats") || strings.HasSuffix(path, "/api/stats") || req.Query.Get("format") == "json" {
 		stats, err := h.store.GetFullStats(50)
 		if err != nil {
 			return abi.ManagementResponse{
@@ -45,10 +34,21 @@ func (h *Handler) HandleRequest(req abi.ManagementRequest) abi.ManagementRespons
 		return abi.ManagementResponse{
 			StatusCode: http.StatusOK,
 			Headers: http.Header{
-				"Content-Type":                []string{"application/json"},
+				"Content-Type":                []string{"application/json; charset=utf-8"},
 				"Access-Control-Allow-Origin": []string{"*"},
 			},
 			Body: raw,
+		}
+	}
+
+	// 2. Dashboard UI HTML Resource
+	if path == "" || path == "/" || strings.HasSuffix(path, "/dashboard") || strings.HasSuffix(path, "/status") {
+		return abi.ManagementResponse{
+			StatusCode: http.StatusOK,
+			Headers: http.Header{
+				"Content-Type": []string{"text/html; charset=utf-8"},
+			},
+			Body: []byte(HTMLDashboardTemplate),
 		}
 	}
 

@@ -246,6 +246,11 @@ func handleMethod(method string, reqBody []byte) ([]byte, error) {
 					Menu:        "Quota & Credit",
 					Description: "CLIProxyAPI 额度与计费控制看板 (sub2api 计算标准)",
 				},
+				{
+					Path:        "/stats",
+					Menu:        "",
+					Description: "Public JSON stats for dashboard resource",
+				},
 			},
 			Routes: []abi.ManagementRoute{
 				{
