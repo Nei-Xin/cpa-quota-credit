@@ -1,52 +1,60 @@
-# CLIProxyAPI 额度与计费统计插件 (CPA Quota & Credit)
+# CLIProxyAPI 额度与计费统计插件 (cpa-quota-credit)
 
-基于 **sub2api** 费用核算体系与模型定价规则，为 **CLIProxyAPI (CPA)** 打造的标准 C-ABI 动态库插件。
+为 **CLIProxyAPI (CPA)** 打造的标准 C-ABI 动态链接库插件。提供高精度的 Token 消耗计量、上游成本与下游用户计费分离（A $ / U $）、动态配额窗口统计、嵌入式 Web 控制面板以及配套的油猴管理面板助手。
 
-## 功能特性
+---
 
-- **sub2api 计费体系深度对齐**：
-  - **Token 细粒度计费**：Input、Output、Reasoning/Thinking、Prompt Cache Read、Prompt Cache Creation（区分 5m / 1h）。
-  - **长上下文加价（Long Context Multiplier）**：超过阈值自动应用阶梯倍率。
-  - **服务等级系数（Service Tier）**：支持 `priority`、`fast` 等等级倍率。
-  - **8 位金额量化**：采用 `NUMERIC(20,8)` Half-Away-From-Zero 舍入算法，避免浮点累积误差。
-- **双重成本（A $ / U $）**：
-  - **`A $` (Actual / Admin Cost)**：上游渠道/账号真实消耗金额（$Base \times Multiplier_{account}$）。
-  - **`U $` (User Cost)**：用户/API Key 计费扣除金额（$Base \times Multiplier_{user}$）。
+## 🌟 核心特性
+
+- **高精度 Token 与费用核算体系**：
+  - **细粒度 Token 计费**：覆盖 Input、Output、Reasoning/Thinking、Prompt Cache Read 与 Prompt Cache Creation（支持 5m / 1h 缓存区分）。
+  - **长上下文阶梯倍率（Long Context Multiplier）**：超长上下文自动匹配梯度单价。
+  - **服务等级系数（Service Tier）**：支持 `priority`、`fast` 等等级倍率换算。
+  - **8 位精度货币量化**：采用 `NUMERIC(20,8)` Half-Away-From-Zero 算法，避免浮点数精度截断误差。
+- **双重成本核算模型（A $ / U $）**：
+  - **`A $` (Actual / Admin Cost)**：上游凭证账号实际支出金额（$Base \times Multiplier_{account}$）。
+  - **`U $` (User Cost)**：下游客户端 / API Key 扣除金额（$Base \times Multiplier_{user}$）。
+- **动态配额时间窗口（Window Stats）**：
+  - 支持 **`7天配额周期`**、**`今日 (0点起)`** 与 **`全部历史`** 3 档时间窗口滑动统计。
+  - 账号卡片数据与上游官方配额周期自动同步，周期重置时徽章用量自动归零。
 - **LiteLLM 动态价格同步**：
-  - 自动从 LiteLLM 远程价格库同步，支持 SHA256 增量检测与本地离线 Fallback 兜底。
-  - 兼容 Claude 有序系列匹配、OpenAI 别名降级、Gemini 3.6 Thinking 规整。
+  - 自动从远程模型价格库定时同步，支持 SHA256 增量校验与本地离线 Fallback 兜底。
+  - 智能兼容 Claude 有序家族匹配、OpenAI 别名降级、Gemini 3.6 Thinking 规则。
 - **嵌入式持久化存储**：
-  - 基于纯 Go 的 `bbolt` 嵌入式数据库，免去外部数据库依赖。
-- **现代化可视化 Web 仪表盘**：
-  - 顶部直接呈现 sub2api 风格的 **4 枚 Pill 徽章**：`req` / `tokens` / `A $` / `U $`。
-  - 支持 API Key 消耗排行、模型使用量统计、最新请求实时明细表。
+  - 基于纯 Go 的轻量级 `bbolt` 嵌入式数据库，免去外部数据库搭建与维护成本。
+- **独立现代化 Web 仪表盘**：
+  - 顶部直接呈现 **4 枚 Pill 胶囊徽章**：`req` / `tokens` / `A $` / `U $`。
+  - 支持调用方 API Key 消耗排行（自动脱敏）、上游账号成本榜、模型用量分布以及实时调用流水明细。
+- **配套油猴管理面板助手**：
+  - 在 CPA 官方管理面板（`management.html#/quota`）账号卡片上实时注入可视化徽章。
 
 ---
 
-## 编译指南
+## 📦 免编译直接使用 (Releases)
 
-编译生成对应操作系统的动态链接库：
+无需本地安装 Go 或 C 语言编译器，在 [GitHub Releases](https://github.com/Nei-Xin/cpa-quota-credit/releases) 页面直接下载对应系统的预编译压缩包：
 
-### Linux (生成 `.so`)
-```bash
-go build -buildmode=c-shared -o cpa-quota-credit.so main.go
-```
-
-### Windows (生成 `.dll`)
-```powershell
-go build -buildmode=c-shared -o cpa-quota-credit.dll main.go
-```
-
-### macOS (生成 `.dylib`)
-```bash
-go build -buildmode=c-shared -o cpa-quota-credit.dylib main.go
-```
+- **Linux x86_64**：`cpa-quota-credit-linux-amd64.tar.gz` (解压出 `.so`)
+- **Linux ARM64**：`cpa-quota-credit-linux-arm64.tar.gz` (解压出 `.so`)
+- **Windows x64**：`cpa-quota-credit-windows-amd64.zip` (解压出 `.dll`)
+- **macOS Apple Silicon**：`cpa-quota-credit-darwin-arm64.tar.gz` (解压出 `.dylib`)
 
 ---
 
-## 接入配置
+## ⚙️ 接入与配置
 
-将生成的动态库文件放入 CLIProxyAPI 的 `plugins` 目录下，并在 `config.yaml` 中配置：
+### 1. 放置插件文件
+将下载解压出的 `.so` 或 `.dll` 放置在 CLIProxyAPI 目录下的 `plugins` 文件夹中：
+```text
+CLIProxyAPI/
+├── cli-proxy-api
+├── config.yaml
+└── plugins/
+    └── cpa-quota-credit.so
+```
+
+### 2. 配置 `config.yaml`
+在 CLIProxyAPI 的 `config.yaml` 中添加以下配置项：
 
 ```yaml
 plugins:
@@ -56,30 +64,76 @@ plugins:
     cpa-quota-credit:
       enabled: true
       priority: 10
-      # 数据库保存路径
+      
+      # 数据库保存路径（自动持久化）
       db_path: "./data/quota_credit.db"
-      # 价格源配置
+      
+      # 动态价格源配置
       pricing:
         remote_url: "https://raw.githubusercontent.com/Wei-Shaw/model-price-repo/main/model_prices_and_context_window.json"
         hash_url: "https://raw.githubusercontent.com/Wei-Shaw/model-price-repo/main/model_prices_and_context_window.sha256"
         update_interval_hours: 24
-      # 倍率配置
+        
+      # 倍率配置 (对应 A $ 实际成本 与 U $ 用户计费)
       multipliers:
-        default_user_multiplier: 1.0     # 默认用户倍率 (U $)
+        default_user_multiplier: 1.0     # 默认用户扣费倍率 (U $)
         default_account_multiplier: 1.0  # 默认上游成本倍率 (A $)
+        
+        # 针对特定下游 API Key 单独设置扣费倍率
         key_multipliers:
-          "sk-custom-vip": 1.2           # 指定 Key 自定义倍率
+          "sk-internal-dev": 1.0
+          "sk-external-user": 1.5
+          "sk-vip-partner": 0.8
+          
+        # 针对特定上游凭证文件 Auth ID 单独设置成本倍率
+        account_multipliers:
+          "claude-oauth-discount.json": 0.8
+          "codex-prod-team.json": 1.0
 ```
 
 ---
 
-## 查看仪表盘与 API
+## 🖥️ 访问与使用
 
-- **Web 仪表盘（浏览器打开）**：
-  ```text
-  http://<CPA_HOST>:<PORT>/v0/resource/plugins/cpa-quota-credit/dashboard
-  ```
-- **Management JSON 接口**：
-  ```bash
-  curl http://<CPA_HOST>:<PORT>/v0/management/plugins/cpa-quota-credit/stats
-  ```
+### 1. 独立 Web 控制看板
+直接在浏览器中打开：
+```text
+http://<你的CPA服务器地址>:<端口>/v0/resource/plugins/cpa-quota-credit/dashboard
+```
+
+### 2. 油猴脚本（浏览器卡片助手）
+1. 在浏览器安装 **Tampermonkey** 扩展。
+2. 添加新建脚本，将仓库中的 [`cpa-quota-credit.user.js`](https://github.com/Nei-Xin/cpa-quota-credit/blob/main/cpa-quota-credit.user.js) 粘贴并保存。
+3. 打开 CPA 管理后台的配额页面（`management.html#/quota`），即可在每个账号卡片上实时查看本周期的请求数、Token 消耗与 A/U 费用徽章！
+
+---
+
+## 🛠️ 本地从源码编译
+
+如果需要自行从源码构建：
+
+```bash
+# Linux
+go build -buildmode=c-shared -ldflags="-s -w" -o cpa-quota-credit.so main.go
+
+# Windows
+go build -buildmode=c-shared -ldflags="-s -w" -o cpa-quota-credit.dll main.go
+
+# macOS
+go build -buildmode=c-shared -ldflags="-s -w" -o cpa-quota-credit.dylib main.go
+```
+
+---
+
+## 🙏 致谢 (Acknowledgements)
+
+本项目在设计与开发过程中参考并受益于以下开源项目，在此表示诚挚的感谢：
+
+- **[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)** - 优秀的 AI API 路由代理与管理网关。
+- **[sub2api](https://github.com/Wei-Shaw/sub2api)** - 优秀的 AI 订阅分发与计费管理系统。
+
+---
+
+## 📄 开源许可证
+
+本项目基于 [MIT License](LICENSE) 开源。
