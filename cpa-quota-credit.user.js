@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CPA Quota & Credit 额度与费用展示助手
 // @namespace    https://github.com/router-for-me/cpa-quota-credit
-// @version      1.0.5
+// @version      1.0.6
 // @description  在 CLIProxyAPI 账号卡片上实时呈现当前周期用量与 A/U 费用徽章 (轻量、无死循环、高响应)
 // @author       router-for-me
 // @match        *://*/management.html*
@@ -13,7 +13,7 @@
 (function () {
     'use strict';
 
-    console.log('[CPA Quota Credit] Userscript v1.0.5 starting...');
+    console.log('[CPA Quota Credit] Userscript v1.0.6 starting...');
 
     // 1. 样式注入
     const style = document.createElement('style');
@@ -108,7 +108,13 @@
         isFetching = false;
     }
 
-    function buildPillBadgesHTML(wStats, totalStats) {
+    function quotaTipLine(label, quota) {
+        if (!quota) return `【官方 ${label}】暂无数据`;
+        const reset = quota.reset_at ? new Date(quota.reset_at).toLocaleString() : '未知';
+        return `【官方 ${label}】已用: ${Number(quota.used_percent || 0).toFixed(1)}% | 重置: ${reset}`;
+    }
+
+    function buildPillBadgesHTML(wStats, totalStats, quota) {
         const req = wStats ? wStats.total_requests : 0;
         const tok = wStats ? wStats.total_tokens : 0;
         const actualCost = wStats ? wStats.actual_cost : 0;
@@ -119,7 +125,7 @@
         const allA = totalStats ? totalStats.actual_cost : actualCost;
         const allU = totalStats ? totalStats.user_cost : userCost;
 
-        const tip = `【当前周期】请求: ${req} | Token: ${tok} | A成本: ${formatUSD(actualCost)} | U计费: ${formatUSD(userCost)}\n【全部历史】请求: ${allReq} | Token: ${allTok} | A成本: ${formatUSD(allA)} | U计费: ${formatUSD(allU)}`;
+        const tip = `【本地 7 天周期】请求: ${req} | Token: ${tok} | A成本: ${formatUSD(actualCost)} | U计费: ${formatUSD(userCost)}\n${quotaTipLine('5 小时', quota && quota.five_hour)}\n${quotaTipLine('7 天', quota && quota.seven_day)}\n【历史】请求: ${allReq} | Token: ${allTok} | A成本: ${formatUSD(allA)} | U计费: ${formatUSD(allU)}`;
 
         return `
             <div class="cpa-pill" title="${tip}"><span class="pill-req">${formatNumber(req)} req</span></div>
@@ -154,8 +160,9 @@
             total_tokens: 0,
             actual_cost: 0,
             user_cost: 0,
-            today: { total_requests: 0, total_tokens: 0, actual_cost: 0, user_cost: 0 },
-            seven_day: { total_requests: 0, total_tokens: 0, actual_cost: 0, user_cost: 0 }
+            five_hour: { total_requests: 0, total_tokens: 0, actual_cost: 0, user_cost: 0 },
+            seven_day: { total_requests: 0, total_tokens: 0, actual_cost: 0, user_cost: 0 },
+            quota: { five_hour: null, seven_day: null }
         };
 
         matches.forEach(m => {
@@ -164,11 +171,11 @@
             merged.actual_cost += (m.actual_cost || 0);
             merged.user_cost += (m.user_cost || 0);
 
-            if (m.today) {
-                merged.today.total_requests += (m.today.total_requests || 0);
-                merged.today.total_tokens += (m.today.total_tokens || 0);
-                merged.today.actual_cost += (m.today.actual_cost || 0);
-                merged.today.user_cost += (m.today.user_cost || 0);
+            if (m.five_hour) {
+                merged.five_hour.total_requests += (m.five_hour.total_requests || 0);
+                merged.five_hour.total_tokens += (m.five_hour.total_tokens || 0);
+                merged.five_hour.actual_cost += (m.five_hour.actual_cost || 0);
+                merged.five_hour.user_cost += (m.five_hour.user_cost || 0);
             }
             if (m.seven_day) {
                 merged.seven_day.total_requests += (m.seven_day.total_requests || 0);
@@ -176,6 +183,13 @@
                 merged.seven_day.actual_cost += (m.seven_day.actual_cost || 0);
                 merged.seven_day.user_cost += (m.seven_day.user_cost || 0);
             }
+            ['five_hour', 'seven_day'].forEach(windowName => {
+                const candidate = m.quota && m.quota[windowName];
+                const current = merged.quota[windowName];
+                if (candidate && (!current || new Date(candidate.updated_at) > new Date(current.updated_at))) {
+                    merged.quota[windowName] = candidate;
+                }
+            });
         });
         return merged;
     }
@@ -207,23 +221,25 @@
                 const accountName = match ? match[1] : '';
 
                 const stat = findAuthStat(accountName);
-                let windowStat = stat ? (stat.seven_day || stat.today || stat) : null;
+                let windowStat = stat ? (stat.seven_day || stat.five_hour || stat) : null;
                 let totalStat = stat ? { total_requests: stat.total_requests, total_tokens: stat.total_tokens, actual_cost: stat.actual_cost, user_cost: stat.user_cost } : null;
 
-                const targetHTML = buildPillBadgesHTML(windowStat, totalStat);
+                const targetHTML = buildPillBadgesHTML(windowStat, totalStat, stat && stat.quota);
+                const quotaHash = stat && stat.quota ? JSON.stringify(stat.quota) : '';
+                const renderedHash = accountName + (windowStat ? windowStat.total_requests : 0) + quotaHash;
 
                 let existingContainer = card.querySelector('.cpa-card-badge-container');
                 if (existingContainer) {
-                    if (existingContainer.dataset.renderedHash !== accountName + (windowStat ? windowStat.total_requests : 0)) {
+                    if (existingContainer.dataset.renderedHash !== renderedHash) {
                         existingContainer.innerHTML = targetHTML;
-                        existingContainer.dataset.renderedHash = accountName + (windowStat ? windowStat.total_requests : 0);
+                        existingContainer.dataset.renderedHash = renderedHash;
                     }
                     return;
                 }
 
                 const badgeBox = document.createElement('div');
                 badgeBox.className = 'cpa-card-badge-container';
-                badgeBox.dataset.renderedHash = accountName + (windowStat ? windowStat.total_requests : 0);
+                badgeBox.dataset.renderedHash = renderedHash;
                 badgeBox.innerHTML = targetHTML;
 
                 const rows = Array.from(card.children);

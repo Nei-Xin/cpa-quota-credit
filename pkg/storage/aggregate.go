@@ -23,9 +23,6 @@ func (s *Store) GetFullStats(limitRecent int) (*FullStats, error) {
 	defer s.mu.RUnlock()
 
 	now := time.Now()
-	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	sevenDayStart := now.Add(-7 * 24 * time.Hour)
-
 	stats := &FullStats{
 		Keys:       make([]KeyStat, 0),
 		Auths:      make([]AuthStat, 0),
@@ -34,263 +31,209 @@ func (s *Store) GetFullStats(limitRecent int) (*FullStats, error) {
 		RecentLogs: make([]Record, 0),
 	}
 
-	// Memory maps to accumulate sub2api window stats
-	todaySummary := &WindowStat{}
+	fiveHourSummary := &WindowStat{}
 	sevenDaySummary := &WindowStat{}
-
-	authToday := make(map[string]*WindowStat)
+	authFiveHour := make(map[string]*WindowStat)
 	authSevenDay := make(map[string]*WindowStat)
-
-	keyToday := make(map[string]*WindowStat)
+	keyFiveHour := make(map[string]*WindowStat)
 	keySevenDay := make(map[string]*WindowStat)
-
-	modelToday := make(map[string]*WindowStat)
+	modelFiveHour := make(map[string]*WindowStat)
 	modelSevenDay := make(map[string]*WindowStat)
+	quotaSnapshots := make(map[string]*QuotaSnapshot)
 
 	err := s.db.View(func(tx *bolt.Tx) error {
-		// 1. Global summary
-		bGlobal := tx.Bucket(bucketGlobal)
-		if v := bGlobal.Get([]byte("summary")); v != nil {
-			_ = json.Unmarshal(v, &stats.Summary)
+		if value := tx.Bucket(bucketGlobal).Get([]byte("summary")); value != nil {
+			_ = json.Unmarshal(value, &stats.Summary)
 		}
 
-		// 2. Client / User Keys
-		bKey := tx.Bucket(bucketKeyStats)
-		_ = bKey.ForEach(func(k, v []byte) error {
-			var ks KeyStat
-			if err := json.Unmarshal(v, &ks); err == nil {
-				stats.Keys = append(stats.Keys, ks)
+		_ = tx.Bucket(bucketKeyStats).ForEach(func(_, value []byte) error {
+			var item KeyStat
+			if json.Unmarshal(value, &item) == nil {
+				stats.Keys = append(stats.Keys, item)
+			}
+			return nil
+		})
+		_ = tx.Bucket(bucketAuthStats).ForEach(func(_, value []byte) error {
+			var item AuthStat
+			if json.Unmarshal(value, &item) == nil {
+				stats.Auths = append(stats.Auths, item)
+			}
+			return nil
+		})
+		_ = tx.Bucket(bucketModelStats).ForEach(func(_, value []byte) error {
+			var item ModelStat
+			if json.Unmarshal(value, &item) == nil {
+				stats.Models = append(stats.Models, item)
+			}
+			return nil
+		})
+		_ = tx.Bucket(bucketDailyStats).ForEach(func(_, value []byte) error {
+			var item DailyStat
+			if json.Unmarshal(value, &item) == nil {
+				stats.Daily = append(stats.Daily, item)
+			}
+			return nil
+		})
+		_ = tx.Bucket(bucketQuota).ForEach(func(key, value []byte) error {
+			var snapshot QuotaSnapshot
+			if json.Unmarshal(value, &snapshot) == nil {
+				quotaSnapshots[string(key)] = &snapshot
 			}
 			return nil
 		})
 
-		// 3. Upstream Auth / Accounts
-		bAuth := tx.Bucket(bucketAuthStats)
-		_ = bAuth.ForEach(func(k, v []byte) error {
-			var as AuthStat
-			if err := json.Unmarshal(v, &as); err == nil {
-				stats.Auths = append(stats.Auths, as)
+		logs := tx.Bucket(bucketUsageLogs)
+		cursor := logs.Cursor()
+		recentCount := 0
+		earliestStart := now.Add(-7 * 24 * time.Hour)
+		for _, snapshot := range quotaSnapshots {
+			start := quotaWindowStart(snapshot.SevenDay, 7*24*time.Hour, now)
+			if start.Before(earliestStart) {
+				earliestStart = start
 			}
-			return nil
-		})
+		}
 
-		// 4. Models
-		bModel := tx.Bucket(bucketModelStats)
-		_ = bModel.ForEach(func(k, v []byte) error {
-			var ms ModelStat
-			if err := json.Unmarshal(v, &ms); err == nil {
-				stats.Models = append(stats.Models, ms)
+		for key, value := cursor.Last(); key != nil; key, value = cursor.Prev() {
+			var record Record
+			if json.Unmarshal(value, &record) != nil {
+				continue
 			}
-			return nil
-		})
-
-		// 5. Daily stats
-		bDaily := tx.Bucket(bucketDailyStats)
-		_ = bDaily.ForEach(func(k, v []byte) error {
-			var ds DailyStat
-			if err := json.Unmarshal(v, &ds); err == nil {
-				stats.Daily = append(stats.Daily, ds)
+			if recentCount < limitRecent {
+				stats.RecentLogs = append(stats.RecentLogs, record)
+				recentCount++
 			}
-			return nil
-		})
-
-		// 6. Scan logs for WindowStats (Today & 7-Day rolling sub2api window) + RecentLogs
-		bLogs := tx.Bucket(bucketUsageLogs)
-		c := bLogs.Cursor()
-		countRecent := 0
-
-		for k, v := c.Last(); k != nil; k, v = c.Prev() {
-			var r Record
-			if err := json.Unmarshal(v, &r); err != nil {
+			if record.Timestamp.Before(earliestStart) {
+				if recentCount >= limitRecent {
+					break
+				}
 				continue
 			}
 
-			if countRecent < limitRecent {
-				stats.RecentLogs = append(stats.RecentLogs, r)
-				countRecent++
+			authID := normalizedAuthID(record.AuthID)
+			apiKey := normalizedAPIKey(record.APIKey)
+			model := normalizedModel(record.Model)
+			snapshot := quotaSnapshots[authID]
+			fiveHourStart := now.Add(-5 * time.Hour)
+			sevenDayStart := now.Add(-7 * 24 * time.Hour)
+			if snapshot != nil {
+				fiveHourStart = quotaWindowStart(snapshot.FiveHour, 5*time.Hour, now)
+				sevenDayStart = quotaWindowStart(snapshot.SevenDay, 7*24*time.Hour, now)
 			}
 
-			tokens := int64(0)
-			actualCost := 0.0
-			userCost := 0.0
-			if r.Cost != nil {
-				tokens = r.Cost.TotalTokens
-				actualCost = r.Cost.ActualCost
-				userCost = r.Cost.UserCost
+			if !record.Timestamp.Before(fiveHourStart) {
+				addRecord(fiveHourSummary, record)
+				addRecord(windowFor(authFiveHour, authID), record)
+				addRecord(windowFor(keyFiveHour, apiKey), record)
+				addRecord(windowFor(modelFiveHour, model), record)
 			}
-
-			// Check 7-Day window
-			if r.Timestamp.After(sevenDayStart) || r.Timestamp.Equal(sevenDayStart) {
-				sevenDaySummary.TotalRequests++
-				sevenDaySummary.TotalTokens += tokens
-				sevenDaySummary.ActualCost = billing.QuantizeAmount(sevenDaySummary.ActualCost + actualCost)
-				sevenDaySummary.UserCost = billing.QuantizeAmount(sevenDaySummary.UserCost + userCost)
-
-				// Auth 7-day
-				aid := r.AuthID
-				if aid == "" {
-					aid = "default-auth"
-				}
-				if authSevenDay[aid] == nil {
-					authSevenDay[aid] = &WindowStat{}
-				}
-				authSevenDay[aid].TotalRequests++
-				authSevenDay[aid].TotalTokens += tokens
-				authSevenDay[aid].ActualCost = billing.QuantizeAmount(authSevenDay[aid].ActualCost + actualCost)
-				authSevenDay[aid].UserCost = billing.QuantizeAmount(authSevenDay[aid].UserCost + userCost)
-
-				// Key 7-day
-				kid := r.APIKey
-				if kid == "" {
-					kid = "default-anonymous"
-				}
-				if keySevenDay[kid] == nil {
-					keySevenDay[kid] = &WindowStat{}
-				}
-				keySevenDay[kid].TotalRequests++
-				keySevenDay[kid].TotalTokens += tokens
-				keySevenDay[kid].ActualCost = billing.QuantizeAmount(keySevenDay[kid].ActualCost + actualCost)
-				keySevenDay[kid].UserCost = billing.QuantizeAmount(keySevenDay[kid].UserCost + userCost)
-
-				// Model 7-day
-				mid := r.Model
-				if mid == "" {
-					mid = "unknown"
-				}
-				if modelSevenDay[mid] == nil {
-					modelSevenDay[mid] = &WindowStat{}
-				}
-				modelSevenDay[mid].TotalRequests++
-				modelSevenDay[mid].TotalTokens += tokens
-				modelSevenDay[mid].ActualCost = billing.QuantizeAmount(modelSevenDay[mid].ActualCost + actualCost)
-				modelSevenDay[mid].UserCost = billing.QuantizeAmount(modelSevenDay[mid].UserCost + userCost)
-			} else {
-				// Since cursor is in reverse order, if timestamp is older than 7 days, we can stop window calculation
-				if countRecent >= limitRecent {
-					break
-				}
-			}
-
-			// Check Today window
-			if r.Timestamp.After(todayStart) || r.Timestamp.Equal(todayStart) {
-				todaySummary.TotalRequests++
-				todaySummary.TotalTokens += tokens
-				todaySummary.ActualCost = billing.QuantizeAmount(todaySummary.ActualCost + actualCost)
-				todaySummary.UserCost = billing.QuantizeAmount(todaySummary.UserCost + userCost)
-
-				aid := r.AuthID
-				if aid == "" {
-					aid = "default-auth"
-				}
-				if authToday[aid] == nil {
-					authToday[aid] = &WindowStat{}
-				}
-				authToday[aid].TotalRequests++
-				authToday[aid].TotalTokens += tokens
-				authToday[aid].ActualCost = billing.QuantizeAmount(authToday[aid].ActualCost + actualCost)
-				authToday[aid].UserCost = billing.QuantizeAmount(authToday[aid].UserCost + userCost)
-
-				kid := r.APIKey
-				if kid == "" {
-					kid = "default-anonymous"
-				}
-				if keyToday[kid] == nil {
-					keyToday[kid] = &WindowStat{}
-				}
-				keyToday[kid].TotalRequests++
-				keyToday[kid].TotalTokens += tokens
-				keyToday[kid].ActualCost = billing.QuantizeAmount(keyToday[kid].ActualCost + actualCost)
-				keyToday[kid].UserCost = billing.QuantizeAmount(keyToday[kid].UserCost + userCost)
-
-				mid := r.Model
-				if mid == "" {
-					mid = "unknown"
-				}
-				if modelToday[mid] == nil {
-					modelToday[mid] = &WindowStat{}
-				}
-				modelToday[mid].TotalRequests++
-				modelToday[mid].TotalTokens += tokens
-				modelToday[mid].ActualCost = billing.QuantizeAmount(modelToday[mid].ActualCost + actualCost)
-				modelToday[mid].UserCost = billing.QuantizeAmount(modelToday[mid].UserCost + userCost)
+			if !record.Timestamp.Before(sevenDayStart) {
+				addRecord(sevenDaySummary, record)
+				addRecord(windowFor(authSevenDay, authID), record)
+				addRecord(windowFor(keySevenDay, apiKey), record)
+				addRecord(windowFor(modelSevenDay, model), record)
 			}
 		}
-
 		return nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
 
-	// Attach Window Stats to Summary
-	stats.Summary.Today = todaySummary
+	stats.Summary.FiveHour = fiveHourSummary
 	stats.Summary.SevenDay = sevenDaySummary
-
-	// Attach Window Stats to Auths
 	for i := range stats.Auths {
-		aid := stats.Auths[i].AuthID
-		if t, ok := authToday[aid]; ok {
-			stats.Auths[i].Today = t
-		} else {
-			stats.Auths[i].Today = &WindowStat{}
-		}
-		if s7, ok := authSevenDay[aid]; ok {
-			stats.Auths[i].SevenDay = s7
-		} else {
-			stats.Auths[i].SevenDay = &WindowStat{}
-		}
+		authID := stats.Auths[i].AuthID
+		stats.Auths[i].FiveHour = windowOrEmpty(authFiveHour[authID])
+		stats.Auths[i].SevenDay = windowOrEmpty(authSevenDay[authID])
+		stats.Auths[i].Quota = visibleQuotaSnapshot(quotaSnapshots[authID], now)
 	}
-
-	// Attach Window Stats to Keys
 	for i := range stats.Keys {
-		kid := stats.Keys[i].APIKey
-		if t, ok := keyToday[kid]; ok {
-			stats.Keys[i].Today = t
-		} else {
-			stats.Keys[i].Today = &WindowStat{}
-		}
-		if s7, ok := keySevenDay[kid]; ok {
-			stats.Keys[i].SevenDay = s7
-		} else {
-			stats.Keys[i].SevenDay = &WindowStat{}
-		}
+		apiKey := stats.Keys[i].APIKey
+		stats.Keys[i].FiveHour = windowOrEmpty(keyFiveHour[apiKey])
+		stats.Keys[i].SevenDay = windowOrEmpty(keySevenDay[apiKey])
 	}
-
-	// Attach Window Stats to Models
 	for i := range stats.Models {
-		mid := stats.Models[i].Model
-		if t, ok := modelToday[mid]; ok {
-			stats.Models[i].Today = t
-		} else {
-			stats.Models[i].Today = &WindowStat{}
-		}
-		if s7, ok := modelSevenDay[mid]; ok {
-			stats.Models[i].SevenDay = s7
-		} else {
-			stats.Models[i].SevenDay = &WindowStat{}
-		}
+		model := stats.Models[i].Model
+		stats.Models[i].FiveHour = windowOrEmpty(modelFiveHour[model])
+		stats.Models[i].SevenDay = windowOrEmpty(modelSevenDay[model])
 	}
 
-	// Sort Keys by UserCost desc
-	sort.Slice(stats.Keys, func(i, j int) bool {
-		return stats.Keys[i].UserCost > stats.Keys[j].UserCost
-	})
-
-	// Sort Auths by ActualCost desc
-	sort.Slice(stats.Auths, func(i, j int) bool {
-		return stats.Auths[i].ActualCost > stats.Auths[j].ActualCost
-	})
-
-	// Sort Models by TotalTokens desc
-	sort.Slice(stats.Models, func(i, j int) bool {
-		return stats.Models[i].TotalTokens > stats.Models[j].TotalTokens
-	})
-
-	// Sort Daily by Date asc
-	sort.Slice(stats.Daily, func(i, j int) bool {
-		return stats.Daily[i].Date < stats.Daily[j].Date
-	})
-
+	sort.Slice(stats.Keys, func(i, j int) bool { return stats.Keys[i].UserCost > stats.Keys[j].UserCost })
+	sort.Slice(stats.Auths, func(i, j int) bool { return stats.Auths[i].ActualCost > stats.Auths[j].ActualCost })
+	sort.Slice(stats.Models, func(i, j int) bool { return stats.Models[i].TotalTokens > stats.Models[j].TotalTokens })
+	sort.Slice(stats.Daily, func(i, j int) bool { return stats.Daily[i].Date < stats.Daily[j].Date })
 	return stats, nil
+}
+
+func quotaWindowStart(window *QuotaWindow, fallback time.Duration, now time.Time) time.Time {
+	if window != nil && window.ResetAt != nil && now.Before(*window.ResetAt) {
+		return window.ResetAt.Add(-fallback)
+	}
+	return now.Add(-fallback)
+}
+
+func visibleQuotaSnapshot(snapshot *QuotaSnapshot, now time.Time) *QuotaSnapshot {
+	if snapshot == nil {
+		return nil
+	}
+	return &QuotaSnapshot{
+		FiveHour: visibleQuotaWindow(snapshot.FiveHour, now),
+		SevenDay: visibleQuotaWindow(snapshot.SevenDay, now),
+	}
+}
+
+func visibleQuotaWindow(window *QuotaWindow, now time.Time) *QuotaWindow {
+	if window == nil {
+		return nil
+	}
+	visible := *window
+	if visible.ResetAt != nil && !now.Before(*visible.ResetAt) {
+		visible.UsedPercent = 0
+	}
+	return &visible
+}
+
+func addRecord(stat *WindowStat, record Record) {
+	stat.TotalRequests++
+	if record.Cost == nil {
+		return
+	}
+	stat.TotalTokens += record.Cost.TotalTokens
+	stat.ActualCost = billing.QuantizeAmount(stat.ActualCost + record.Cost.ActualCost)
+	stat.UserCost = billing.QuantizeAmount(stat.UserCost + record.Cost.UserCost)
+}
+
+func windowFor(items map[string]*WindowStat, key string) *WindowStat {
+	if items[key] == nil {
+		items[key] = &WindowStat{}
+	}
+	return items[key]
+}
+
+func windowOrEmpty(stat *WindowStat) *WindowStat {
+	if stat == nil {
+		return &WindowStat{}
+	}
+	return stat
+}
+
+func normalizedAuthID(value string) string {
+	if value == "" {
+		return "default-auth"
+	}
+	return value
+}
+
+func normalizedAPIKey(value string) string {
+	if value == "" {
+		return "default-anonymous"
+	}
+	return value
+}
+
+func normalizedModel(value string) string {
+	if value == "" {
+		return "unknown"
+	}
+	return value
 }

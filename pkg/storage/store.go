@@ -19,6 +19,7 @@ var (
 	bucketModelStats = []byte("model_stats")
 	bucketDailyStats = []byte("daily_stats")
 	bucketGlobal     = []byte("global_stats")
+	bucketQuota      = []byte("quota_snapshots")
 )
 
 type Record struct {
@@ -40,12 +41,24 @@ type WindowStat struct {
 	UserCost      float64 `json:"user_cost"`
 }
 
+type QuotaWindow struct {
+	UsedPercent   float64    `json:"used_percent"`
+	WindowMinutes int        `json:"window_minutes,omitempty"`
+	ResetAt       *time.Time `json:"reset_at,omitempty"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+type QuotaSnapshot struct {
+	FiveHour *QuotaWindow `json:"five_hour,omitempty"`
+	SevenDay *QuotaWindow `json:"seven_day,omitempty"`
+}
+
 type GlobalSummary struct {
 	TotalRequests int64       `json:"total_requests"`
 	TotalTokens   int64       `json:"total_tokens"`
 	ActualCost    float64     `json:"actual_cost"`
 	UserCost      float64     `json:"user_cost"`
-	Today         *WindowStat `json:"today,omitempty"`
+	FiveHour      *WindowStat `json:"five_hour,omitempty"`
 	SevenDay      *WindowStat `json:"seven_day,omitempty"`
 	LastUpdated   time.Time   `json:"last_updated"`
 }
@@ -56,21 +69,22 @@ type KeyStat struct {
 	TotalTokens   int64       `json:"total_tokens"`
 	ActualCost    float64     `json:"actual_cost"`
 	UserCost      float64     `json:"user_cost"`
-	Today         *WindowStat `json:"today,omitempty"`
+	FiveHour      *WindowStat `json:"five_hour,omitempty"`
 	SevenDay      *WindowStat `json:"seven_day,omitempty"`
 	LastActive    time.Time   `json:"last_active"`
 }
 
 type AuthStat struct {
-	AuthID        string      `json:"auth_id"`
-	Provider      string      `json:"provider"`
-	TotalRequests int64       `json:"total_requests"`
-	TotalTokens   int64       `json:"total_tokens"`
-	ActualCost    float64     `json:"actual_cost"`
-	UserCost      float64     `json:"user_cost"`
-	Today         *WindowStat `json:"today,omitempty"`
-	SevenDay      *WindowStat `json:"seven_day,omitempty"`
-	LastActive    time.Time   `json:"last_active"`
+	AuthID        string         `json:"auth_id"`
+	Provider      string         `json:"provider"`
+	TotalRequests int64          `json:"total_requests"`
+	TotalTokens   int64          `json:"total_tokens"`
+	ActualCost    float64        `json:"actual_cost"`
+	UserCost      float64        `json:"user_cost"`
+	FiveHour      *WindowStat    `json:"five_hour,omitempty"`
+	SevenDay      *WindowStat    `json:"seven_day,omitempty"`
+	Quota         *QuotaSnapshot `json:"quota,omitempty"`
+	LastActive    time.Time      `json:"last_active"`
 }
 
 type ModelStat struct {
@@ -80,7 +94,7 @@ type ModelStat struct {
 	TotalTokens   int64       `json:"total_tokens"`
 	ActualCost    float64     `json:"actual_cost"`
 	UserCost      float64     `json:"user_cost"`
-	Today         *WindowStat `json:"today,omitempty"`
+	FiveHour      *WindowStat `json:"five_hour,omitempty"`
 	SevenDay      *WindowStat `json:"seven_day,omitempty"`
 }
 
@@ -114,7 +128,7 @@ func NewStore(dbPath string) (*Store, error) {
 
 	// Initialize buckets
 	err = db.Update(func(tx *bolt.Tx) error {
-		for _, b := range [][]byte{bucketUsageLogs, bucketKeyStats, bucketAuthStats, bucketModelStats, bucketDailyStats, bucketGlobal} {
+		for _, b := range [][]byte{bucketUsageLogs, bucketKeyStats, bucketAuthStats, bucketModelStats, bucketDailyStats, bucketGlobal, bucketQuota} {
 			if _, err := tx.CreateBucketIfNotExists(b); err != nil {
 				return err
 			}

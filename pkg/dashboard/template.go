@@ -118,9 +118,9 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
             <div class="badge-bar">
                 <!-- Time window switcher -->
                 <div class="window-tabs">
-                    <button class="tab-btn active" id="tab-week" onclick="switchWindow('week')">7天配额周期</button>
-                    <button class="tab-btn" id="tab-today" onclick="switchWindow('today')">今日 (0点起)</button>
-                    <button class="tab-btn" id="tab-total" onclick="switchWindow('total')">全部历史</button>
+                    <button class="tab-btn active" id="tab-week" onclick="switchWindow('week')">7 天周期</button>
+                    <button class="tab-btn" id="tab-five" onclick="switchWindow('five')">5 小时周期</button>
+                    <button class="tab-btn" id="tab-total" onclick="switchWindow('total')">历史</button>
                 </div>
 
                 <!-- 4 Pills Aligned with sub2api UI -->
@@ -161,10 +161,11 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
                             <th>请求</th>
                             <th>Token</th>
                             <th>成本 (A $)</th>
+                            <th>官方已用</th>
                         </tr>
                     </thead>
                     <tbody id="auth-table-body">
-                        <tr><td colspan="4" class="empty-hint">暂无记录</td></tr>
+                        <tr><td colspan="5" class="empty-hint">暂无记录</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -213,13 +214,13 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
     </div>
 
     <script>
-        let currentWindow = 'week'; // 'week' | 'today' | 'total'
+        let currentWindow = 'week'; // 'week' | 'five' | 'total'
         let cachedFullData = null;
 
         function switchWindow(w) {
             currentWindow = w;
             document.getElementById('tab-week').classList.toggle('active', w === 'week');
-            document.getElementById('tab-today').classList.toggle('active', w === 'today');
+            document.getElementById('tab-five').classList.toggle('active', w === 'five');
             document.getElementById('tab-total').classList.toggle('active', w === 'total');
             if (cachedFullData) {
                 renderDashboard(cachedFullData);
@@ -252,12 +253,12 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
 
         function extractWindowStats(item, windowType) {
             if (!item) return { requests: 0, tokens: 0, actual_cost: 0, user_cost: 0 };
-            if (windowType === 'today' && item.today) {
+            if (windowType === 'five' && item.five_hour) {
                 return {
-                    requests: item.today.total_requests || 0,
-                    tokens: item.today.total_tokens || 0,
-                    actual_cost: item.today.actual_cost || 0,
-                    user_cost: item.today.user_cost || 0
+                    requests: item.five_hour.total_requests || 0,
+                    tokens: item.five_hour.total_tokens || 0,
+                    actual_cost: item.five_hour.actual_cost || 0,
+                    user_cost: item.five_hour.user_cost || 0
                 };
             }
             if (windowType === 'week' && item.seven_day) {
@@ -274,6 +275,19 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
                 actual_cost: item.actual_cost || 0,
                 user_cost: item.user_cost || 0
             };
+        }
+
+        function extractQuota(item, windowType) {
+            if (!item || !item.quota) return null;
+            if (windowType === 'five') return item.quota.five_hour || null;
+            if (windowType === 'week') return item.quota.seven_day || null;
+            return null;
+        }
+
+        function quotaHTML(quota) {
+            if (!quota) return '-';
+            var reset = quota.reset_at ? new Date(quota.reset_at).toLocaleString() : '未知';
+            return '<span title="重置时间: ' + escapeHTML(reset) + '">' + Number(quota.used_percent || 0).toFixed(1) + '%</span>';
         }
 
         async function fetchStats() {
@@ -327,17 +341,19 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
             // 2. Upstream Auths Table
             const authBody = document.getElementById('auth-table-body');
             if (!data.auths || data.auths.length === 0) {
-                authBody.innerHTML = '<tr><td colspan="4" class="empty-hint">暂无上游账号记录</td></tr>';
+                authBody.innerHTML = '<tr><td colspan="5" class="empty-hint">暂无上游账号记录</td></tr>';
             } else {
                 var aHtml = '';
                 for (var a = 0; a < data.auths.length; a++) {
                     var au = data.auths[a];
                     var aws = extractWindowStats(au, currentWindow);
+                    var quota = extractQuota(au, currentWindow);
                     aHtml += '<tr>' +
                         '<td><span class="badge-cell badge-auth" title="' + escapeHTML(au.auth_id) + '">' + escapeHTML(au.auth_id) + '</span></td>' +
                         '<td class="text-num">' + (aws.requests || 0).toLocaleString() + '</td>' +
                         '<td class="text-num">' + formatNumber(aws.tokens) + '</td>' +
                         '<td class="text-num cost-a">' + formatUSD(aws.actual_cost) + '</td>' +
+                        '<td class="text-num">' + quotaHTML(quota) + '</td>' +
                         '</tr>';
                 }
                 authBody.innerHTML = aHtml;

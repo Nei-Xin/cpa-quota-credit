@@ -179,7 +179,7 @@ func handleMethod(method string, reqBody []byte) ([]byte, error) {
 			SchemaVersion: abi.SchemaVersion,
 			Metadata: abi.PluginMetadata{
 				Name:             "cpa-quota-credit",
-				Version:          "1.0.0",
+				Version:          "1.0.4",
 				Author:           "router-for-me",
 				GitHubRepository: "https://github.com/router-for-me/cpa-quota-credit",
 				Logo:             "https://raw.githubusercontent.com/router-for-me/CLIProxyAPI/main/assets/logo/antigravity.svg",
@@ -210,11 +210,14 @@ func handleMethod(method string, reqBody []byte) ([]byte, error) {
 
 			cost := billingCalc.Calculate(billing.CostInput{
 				Model:               model,
+				Provider:            record.Provider,
+				ExecutorType:        record.ExecutorType,
 				InputTokens:         record.Detail.InputTokens,
 				OutputTokens:        record.Detail.OutputTokens,
 				ReasoningTokens:     record.Detail.ReasoningTokens,
 				CacheReadTokens:     record.Detail.CacheReadTokens,
 				CacheCreationTokens: record.Detail.CacheCreationTokens,
+				TotalTokens:         record.Detail.TotalTokens,
 				ServiceTier:         record.ServiceTier,
 				APIKey:              record.APIKey,
 				AuthID:              record.AuthID,
@@ -225,6 +228,7 @@ func handleMethod(method string, reqBody []byte) ([]byte, error) {
 				reqTimestamp = time.Now()
 			}
 
+			_ = quotaStore.UpdateCodexQuota(record.AuthID, record.ResponseHeaders, time.Now())
 			_ = quotaStore.RecordUsage(storage.Record{
 				APIKey:    record.APIKey,
 				AuthID:    record.AuthID,
