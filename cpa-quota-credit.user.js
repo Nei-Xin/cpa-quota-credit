@@ -133,14 +133,51 @@
         if (!cachedStats || !cachedStats.auths || !accountText) return null;
         const target = accountText.trim().toLowerCase().replace(/\.\.\.$/, '');
 
-        let matched = cachedStats.auths.find(a => a.auth_id && a.auth_id.toLowerCase() === target);
-        if (matched) return matched;
+        // 提取卡片中的邮箱主体 (如 9350205@gmail.com)
+        const emailMatch = target.match(/([a-zA-Z0-9_\-\.]+@[a-zA-Z0-9_\-\.]+)/);
+        const emailKey = emailMatch ? emailMatch[1] : '';
 
-        matched = cachedStats.auths.find(a => {
+        // 匹配所有属于该账号的记录 (支持多次重登产生的历史记录)
+        const matches = cachedStats.auths.filter(a => {
             const aid = (a.auth_id || '').toLowerCase();
+            if (emailKey && aid.includes(emailKey)) return true;
             return aid.includes(target) || target.includes(aid.replace(/\.json$/, ''));
         });
-        return matched;
+
+        if (matches.length === 0) return null;
+        if (matches.length === 1) return matches[0];
+
+        // 自动将同一邮箱多次认证的历史数据完美合并归一
+        const merged = {
+            auth_id: matches[0].auth_id,
+            total_requests: 0,
+            total_tokens: 0,
+            actual_cost: 0,
+            user_cost: 0,
+            today: { total_requests: 0, total_tokens: 0, actual_cost: 0, user_cost: 0 },
+            seven_day: { total_requests: 0, total_tokens: 0, actual_cost: 0, user_cost: 0 }
+        };
+
+        matches.forEach(m => {
+            merged.total_requests += (m.total_requests || 0);
+            merged.total_tokens += (m.total_tokens || 0);
+            merged.actual_cost += (m.actual_cost || 0);
+            merged.user_cost += (m.user_cost || 0);
+
+            if (m.today) {
+                merged.today.total_requests += (m.today.total_requests || 0);
+                merged.today.total_tokens += (m.today.total_tokens || 0);
+                merged.today.actual_cost += (m.today.actual_cost || 0);
+                merged.today.user_cost += (m.today.user_cost || 0);
+            }
+            if (m.seven_day) {
+                merged.seven_day.total_requests += (m.seven_day.total_requests || 0);
+                merged.seven_day.total_tokens += (m.seven_day.total_tokens || 0);
+                merged.seven_day.actual_cost += (m.seven_day.actual_cost || 0);
+                merged.seven_day.user_cost += (m.seven_day.user_cost || 0);
+            }
+        });
+        return merged;
     }
 
     // 渲染卡片徽章 (防死循环保护)
