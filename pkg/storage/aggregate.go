@@ -166,8 +166,11 @@ func (s *Store) GetFullStats(limitRecent int) (*FullStats, error) {
 }
 
 func quotaWindowStart(window *QuotaWindow, fallback time.Duration, now time.Time) time.Time {
-	if window != nil && window.ResetAt != nil && now.Before(*window.ResetAt) {
-		return window.ResetAt.Add(-fallback)
+	if window != nil && window.ResetAt != nil {
+		if now.Before(*window.ResetAt) {
+			return window.ResetAt.Add(-fallback)
+		}
+		return *window.ResetAt
 	}
 	return now.Add(-fallback)
 }

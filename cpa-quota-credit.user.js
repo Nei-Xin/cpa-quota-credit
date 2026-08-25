@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         CPA Quota & Credit 额度与费用展示助手
 // @namespace    https://github.com/router-for-me/cpa-quota-credit
-// @version      1.0.6
-// @description  在 CLIProxyAPI 账号卡片上实时呈现当前周期用量与 A/U 费用徽章 (轻量、无死循环、高响应)
+// @version      1.0.7
+// @description  在 CLIProxyAPI 账号卡片上分别呈现 5 小时与 7 天周期用量及 A/U 费用徽章
 // @author       router-for-me
 // @match        *://*/management.html*
 // @match        https://cpa.zzii.de/management.html*
@@ -13,7 +13,7 @@
 (function () {
     'use strict';
 
-    console.log('[CPA Quota Credit] Userscript v1.0.6 starting...');
+    console.log('[CPA Quota Credit] Userscript v1.0.7 starting...');
 
     // 1. 样式注入
     const style = document.createElement('style');
@@ -60,10 +60,26 @@
 
         .cpa-card-badge-container {
             display: flex !important;
-            align-items: center !important;
-            flex-wrap: wrap !important;
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 2px !important;
             margin: 6px 0 8px 0 !important;
             padding: 2px 0 !important;
+        }
+
+        .cpa-period-row {
+            display: flex !important;
+            align-items: center !important;
+            flex-wrap: wrap !important;
+        }
+
+        .cpa-period-label {
+            width: 24px !important;
+            flex: 0 0 24px !important;
+            color: #64748b !important;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+            font-size: 10px !important;
+            font-weight: 700 !important;
         }
     `;
     if (!document.getElementById('cpa-quota-credit-style')) {
@@ -114,25 +130,30 @@
         return `【官方 ${label}】已用: ${Number(quota.used_percent || 0).toFixed(1)}% | 重置: ${reset}`;
     }
 
-    function buildPillBadgesHTML(wStats, totalStats, quota) {
-        const req = wStats ? wStats.total_requests : 0;
-        const tok = wStats ? wStats.total_tokens : 0;
-        const actualCost = wStats ? wStats.actual_cost : 0;
-        const userCost = wStats ? wStats.user_cost : 0;
+    function periodTipLine(label, stats) {
+        const s = stats || {};
+        return `【本地 ${label}】请求: ${s.total_requests || 0} | Token: ${s.total_tokens || 0} | A成本: ${formatUSD(s.actual_cost)} | U计费: ${formatUSD(s.user_cost)}`;
+    }
 
-        const allReq = totalStats ? totalStats.total_requests : req;
-        const allTok = totalStats ? totalStats.total_tokens : tok;
-        const allA = totalStats ? totalStats.actual_cost : actualCost;
-        const allU = totalStats ? totalStats.user_cost : userCost;
-
-        const tip = `【本地 7 天周期】请求: ${req} | Token: ${tok} | A成本: ${formatUSD(actualCost)} | U计费: ${formatUSD(userCost)}\n${quotaTipLine('5 小时', quota && quota.five_hour)}\n${quotaTipLine('7 天', quota && quota.seven_day)}\n【历史】请求: ${allReq} | Token: ${allTok} | A成本: ${formatUSD(allA)} | U计费: ${formatUSD(allU)}`;
-
+    function buildPeriodRowHTML(label, stats, tip) {
+        const s = stats || {};
         return `
-            <div class="cpa-pill" title="${tip}"><span class="pill-req">${formatNumber(req)} req</span></div>
-            <div class="cpa-pill" title="${tip}"><span class="pill-tok">${formatNumber(tok)}</span></div>
-            <div class="cpa-pill" title="${tip}"><span class="pill-prefix-a">A</span> ${formatUSD(actualCost)}</div>
-            <div class="cpa-pill" title="${tip}"><span class="pill-prefix-u">U</span> ${formatUSD(userCost)}</div>
+            <div class="cpa-period-row" title="${tip}">
+                <span class="cpa-period-label">${label}</span>
+                <div class="cpa-pill"><span class="pill-req">${formatNumber(s.total_requests || 0)} req</span></div>
+                <div class="cpa-pill"><span class="pill-tok">${formatNumber(s.total_tokens || 0)}</span></div>
+                <div class="cpa-pill"><span class="pill-prefix-a">A</span> ${formatUSD(s.actual_cost)}</div>
+                <div class="cpa-pill"><span class="pill-prefix-u">U</span> ${formatUSD(s.user_cost)}</div>
+            </div>
         `;
+    }
+
+    function buildPillBadgesHTML(fiveHourStats, sevenDayStats, totalStats, quota) {
+        const total = totalStats || {};
+        const tip = `${periodTipLine('5 小时周期', fiveHourStats)}\n${periodTipLine('7 天周期', sevenDayStats)}\n${quotaTipLine('5 小时', quota && quota.five_hour)}\n${quotaTipLine('7 天', quota && quota.seven_day)}\n【历史】请求: ${total.total_requests || 0} | Token: ${total.total_tokens || 0} | A成本: ${formatUSD(total.actual_cost)} | U计费: ${formatUSD(total.user_cost)}`;
+
+        return buildPeriodRowHTML('5h', fiveHourStats, tip) +
+            buildPeriodRowHTML('7d', sevenDayStats, tip);
     }
 
     function findAuthStat(accountText) {
@@ -221,12 +242,12 @@
                 const accountName = match ? match[1] : '';
 
                 const stat = findAuthStat(accountName);
-                let windowStat = stat ? (stat.seven_day || stat.five_hour || stat) : null;
+                let fiveHourStat = stat ? stat.five_hour : null;
+                let sevenDayStat = stat ? stat.seven_day : null;
                 let totalStat = stat ? { total_requests: stat.total_requests, total_tokens: stat.total_tokens, actual_cost: stat.actual_cost, user_cost: stat.user_cost } : null;
 
-                const targetHTML = buildPillBadgesHTML(windowStat, totalStat, stat && stat.quota);
-                const quotaHash = stat && stat.quota ? JSON.stringify(stat.quota) : '';
-                const renderedHash = accountName + (windowStat ? windowStat.total_requests : 0) + quotaHash;
+                const targetHTML = buildPillBadgesHTML(fiveHourStat, sevenDayStat, totalStat, stat && stat.quota);
+                const renderedHash = accountName + JSON.stringify({ fiveHourStat, sevenDayStat, quota: stat && stat.quota });
 
                 let existingContainer = card.querySelector('.cpa-card-badge-container');
                 if (existingContainer) {

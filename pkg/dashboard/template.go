@@ -104,6 +104,12 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
         .text-num { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
         .cost-u { color: var(--accent-amber); font-weight: 600; }
         .cost-a { color: var(--accent-purple); font-weight: 600; }
+        .quota-list { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; white-space: nowrap; }
+        .quota-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 5px; border-radius: 4px; background: rgba(56, 189, 248, 0.12); color: #bae6fd; font-size: 11px; font-weight: 600; }
+        .quota-badge.warn { background: rgba(251, 191, 36, 0.14); color: var(--accent-amber); }
+        .quota-badge.danger { background: rgba(248, 113, 113, 0.14); color: #fca5a5; }
+        .quota-badge.missing { background: rgba(148, 163, 184, 0.1); color: var(--text-secondary); }
+        .quota-label { font-size: 10px; opacity: 0.8; }
         .empty-hint { text-align: center; color: var(--text-secondary); padding: 20px; font-style: italic; }
     </style>
 </head>
@@ -161,7 +167,7 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
                             <th>请求</th>
                             <th>Token</th>
                             <th>成本 (A $)</th>
-                            <th>官方已用</th>
+                            <th>官方额度</th>
                         </tr>
                     </thead>
                     <tbody id="auth-table-body">
@@ -277,17 +283,30 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
             };
         }
 
-        function extractQuota(item, windowType) {
-            if (!item || !item.quota) return null;
-            if (windowType === 'five') return item.quota.five_hour || null;
-            if (windowType === 'week') return item.quota.seven_day || null;
-            return null;
+        function quotaClass(quota) {
+            if (!quota) return 'missing';
+            var used = Number(quota.used_percent || 0);
+            if (used >= 90) return 'danger';
+            if (used >= 70) return 'warn';
+            return '';
+        }
+
+        function quotaBadgeHTML(label, quota) {
+            if (!quota) {
+                return '<span class="quota-badge missing"><span class="quota-label">' + label + '</span>--</span>';
+            }
+            var reset = quota.reset_at ? new Date(quota.reset_at).toLocaleString() : '未知';
+            var updated = quota.updated_at ? new Date(quota.updated_at).toLocaleString() : '未知';
+            var tip = label + ' 重置时间: ' + reset + ' | 数据更新时间: ' + updated;
+            return '<span class="quota-badge ' + quotaClass(quota) + '" title="' + escapeHTML(tip) + '"><span class="quota-label">' + label + '</span>' + Number(quota.used_percent || 0).toFixed(1) + '%</span>';
         }
 
         function quotaHTML(quota) {
-            if (!quota) return '-';
-            var reset = quota.reset_at ? new Date(quota.reset_at).toLocaleString() : '未知';
-            return '<span title="重置时间: ' + escapeHTML(reset) + '">' + Number(quota.used_percent || 0).toFixed(1) + '%</span>';
+            quota = quota || {};
+            return '<div class="quota-list">' +
+                quotaBadgeHTML('5h', quota.five_hour || null) +
+                quotaBadgeHTML('7d', quota.seven_day || null) +
+                '</div>';
         }
 
         async function fetchStats() {
@@ -347,13 +366,12 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
                 for (var a = 0; a < data.auths.length; a++) {
                     var au = data.auths[a];
                     var aws = extractWindowStats(au, currentWindow);
-                    var quota = extractQuota(au, currentWindow);
                     aHtml += '<tr>' +
                         '<td><span class="badge-cell badge-auth" title="' + escapeHTML(au.auth_id) + '">' + escapeHTML(au.auth_id) + '</span></td>' +
                         '<td class="text-num">' + (aws.requests || 0).toLocaleString() + '</td>' +
                         '<td class="text-num">' + formatNumber(aws.tokens) + '</td>' +
                         '<td class="text-num cost-a">' + formatUSD(aws.actual_cost) + '</td>' +
-                        '<td class="text-num">' + quotaHTML(quota) + '</td>' +
+                        '<td class="text-num">' + quotaHTML(au.quota) + '</td>' +
                         '</tr>';
                 }
                 authBody.innerHTML = aHtml;
