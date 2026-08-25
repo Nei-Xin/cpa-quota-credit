@@ -10,9 +10,13 @@
 
 ## 📸 效果展示
 
-| 1. 独立 Web 控制看板 | 2. CPA 账号卡片徽章 (油猴助手) |
-| :---: | :---: |
-| ![看板](assets/dashboard_preview.png) | ![卡片](assets/tampermonkey_preview.png) |
+### 1. 独立 Web 控制看板
+
+![看板](assets/dashboard_preview.png)
+
+### 2. CPA 账号卡片徽章（油猴助手）
+
+![卡片](assets/tampermonkey_preview.png)
 
 ---
 

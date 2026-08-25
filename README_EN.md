@@ -10,9 +10,13 @@ A high-precision Token measurement and billing calculation plugin built for **CL
 
 ## 📸 Screenshots
 
-| 1. Standalone Web Dashboard | 2. CPA Account Card Badges (Tampermonkey) |
-| :---: | :---: |
-| ![Dashboard](assets/dashboard_preview.png) | ![Cards](assets/tampermonkey_preview.png) |
+### 1. Standalone Web Dashboard
+
+![Dashboard](assets/dashboard_preview.png)
+
+### 2. CPA Account Card Badges (Tampermonkey)
+
+![Cards](assets/tampermonkey_preview.png)
 
 ---
 
