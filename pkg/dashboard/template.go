@@ -110,6 +110,9 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
         .quota-badge.danger { background: rgba(248, 113, 113, 0.14); color: #fca5a5; }
         .quota-badge.missing { background: rgba(148, 163, 184, 0.1); color: var(--text-secondary); }
         .quota-label { font-size: 10px; opacity: 0.8; }
+        .auth-cost-list { gap: 3px; }
+        .auth-cost-line { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }
+        .auth-cost-label { color: var(--text-secondary); font-size: 10px; font-weight: 600; }
         .empty-hint { text-align: center; color: var(--text-secondary); padding: 20px; font-style: italic; }
     </style>
 </head>
@@ -309,6 +312,24 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
                 '</div>';
         }
 
+        // 上游账号成本与该账号实际存在的官方额度窗口对齐。
+        // 两种官方窗口都存在时同时展示，避免根据数据猜测账号类型。
+        function authCostHTML(auth) {
+            var quota = auth && auth.quota ? auth.quota : {};
+            var rows = [];
+            if (quota.five_hour) {
+                rows.push('<div class="auth-cost-line"><span class="auth-cost-label">5h</span><span class="cost-a">' + formatUSD((auth.five_hour && auth.five_hour.actual_cost) || 0) + '</span></div>');
+            }
+            if (quota.seven_day) {
+                rows.push('<div class="auth-cost-line"><span class="auth-cost-label">7d</span><span class="cost-a">' + formatUSD((auth.seven_day && auth.seven_day.actual_cost) || 0) + '</span></div>');
+            }
+            if (rows.length === 0) {
+                var fallback = extractWindowStats(auth, currentWindow);
+                return '<span class="cost-a">' + formatUSD(fallback.actual_cost) + '</span>';
+            }
+            return '<div class="quota-list auth-cost-list">' + rows.join('') + '</div>';
+        }
+
         async function fetchStats() {
             const endpoints = [
                 '/v0/resource/plugins/cpa-quota-credit/stats',
@@ -370,7 +391,7 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
                         '<td><span class="badge-cell badge-auth" title="' + escapeHTML(au.auth_id) + '">' + escapeHTML(au.auth_id) + '</span></td>' +
                         '<td class="text-num">' + (aws.requests || 0).toLocaleString() + '</td>' +
                         '<td class="text-num">' + formatNumber(aws.tokens) + '</td>' +
-                        '<td class="text-num cost-a">' + formatUSD(aws.actual_cost) + '</td>' +
+                        '<td class="text-num">' + authCostHTML(au) + '</td>' +
                         '<td class="text-num">' + quotaHTML(au.quota) + '</td>' +
                         '</tr>';
                 }

@@ -179,7 +179,7 @@ func handleMethod(method string, reqBody []byte) ([]byte, error) {
 			SchemaVersion: abi.SchemaVersion,
 			Metadata: abi.PluginMetadata{
 				Name:             "cpa-quota-credit",
-				Version:          "1.0.5",
+				Version:          "1.0.6",
 				Author:           "router-for-me",
 				GitHubRepository: "https://github.com/router-for-me/cpa-quota-credit",
 				Logo:             "https://raw.githubusercontent.com/router-for-me/CLIProxyAPI/main/assets/logo/antigravity.svg",
