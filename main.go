@@ -39,12 +39,27 @@ static const cliproxy_host_api* stored_host;
 static void store_host_api(const cliproxy_host_api* host) {
 	stored_host = host;
 }
+
+static int call_host_api(const char* method, const uint8_t* request, size_t request_len, cliproxy_buffer* response) {
+	if (stored_host == NULL || stored_host->call == NULL) {
+		return 1;
+	}
+	return stored_host->call(stored_host->host_ctx, method, request, request_len, response);
+}
+
+static void free_host_buffer(void* ptr, size_t len) {
+	if (stored_host != NULL && stored_host->free_buffer != NULL && ptr != NULL) {
+		stored_host->free_buffer(ptr, len);
+	}
+}
 */
 import "C"
 
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -179,7 +194,7 @@ func handleMethod(method string, reqBody []byte) ([]byte, error) {
 			SchemaVersion: abi.SchemaVersion,
 			Metadata: abi.PluginMetadata{
 				Name:             "cpa-quota-credit",
-				Version:          "1.0.6",
+				Version:          "1.0.7",
 				Author:           "router-for-me",
 				GitHubRepository: "https://github.com/router-for-me/cpa-quota-credit",
 				Logo:             "https://raw.githubusercontent.com/router-for-me/CLIProxyAPI/main/assets/logo/antigravity.svg",
@@ -275,6 +290,13 @@ func handleMethod(method string, reqBody []byte) ([]byte, error) {
 		if err := json.Unmarshal(reqBody, &mgmtReq); err != nil {
 			return nil, err
 		}
+		if isStatsRequest(mgmtReq) {
+			if activeAuthIDs, ok := listActiveAuthIDs(); ok {
+				resp := dashboardHandler.HandleRequestWithAuthFilter(mgmtReq, activeAuthIDs)
+				raw, _ := json.Marshal(resp)
+				return okEnvelope(raw), nil
+			}
+		}
 		resp := dashboardHandler.HandleRequest(mgmtReq)
 		raw, _ := json.Marshal(resp)
 		return okEnvelope(raw), nil
@@ -286,6 +308,90 @@ func handleMethod(method string, reqBody []byte) ([]byte, error) {
 	default:
 		return errorEnvelope("unknown_method", "unknown method: "+method), nil
 	}
+}
+
+type hostAuthFileEntry struct {
+	ID        string `json:"id,omitempty"`
+	AuthIndex string `json:"auth_index,omitempty"`
+	Name      string `json:"name,omitempty"`
+}
+
+type hostAuthListResponse struct {
+	Files []hostAuthFileEntry `json:"files"`
+}
+
+func isStatsRequest(req abi.ManagementRequest) bool {
+	path := strings.TrimSpace(req.Path)
+	return strings.HasSuffix(path, "/stats") || strings.HasSuffix(path, "/api/stats") || req.Query.Get("format") == "json"
+}
+
+func listActiveAuthIDs() (map[string]struct{}, bool) {
+	raw, errCall := callHostCallback(abi.MethodHostAuthList, []byte(`{}`))
+	if errCall != nil {
+		return nil, false
+	}
+	var response hostAuthListResponse
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return nil, false
+	}
+	ids := make(map[string]struct{}, len(response.Files)*3)
+	for _, file := range response.Files {
+		addAuthIDVariants(ids, file.ID)
+		addAuthIDVariants(ids, file.AuthIndex)
+		addAuthIDVariants(ids, file.Name)
+	}
+	return ids, true
+}
+
+func addAuthIDVariants(ids map[string]struct{}, raw string) {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	if value == "" {
+		return
+	}
+	ids[value] = struct{}{}
+	base := filepath.Base(strings.ReplaceAll(value, "\\", "/"))
+	ids[base] = struct{}{}
+	ids[strings.TrimSuffix(base, ".json")] = struct{}{}
+}
+
+func callHostCallback(method string, payload []byte) (json.RawMessage, error) {
+	cMethod := C.CString(method)
+	defer C.free(unsafe.Pointer(cMethod))
+	var requestPtr *C.uint8_t
+	if len(payload) > 0 {
+		cPayload := C.CBytes(payload)
+		if cPayload == nil {
+			return nil, fmt.Errorf("allocate host callback payload")
+		}
+		defer C.free(cPayload)
+		requestPtr = (*C.uint8_t)(cPayload)
+	}
+	var response C.cliproxy_buffer
+	callCode := C.call_host_api(cMethod, requestPtr, C.size_t(len(payload)), &response)
+	var rawResponse []byte
+	if response.ptr != nil && response.len > 0 {
+		rawResponse = C.GoBytes(response.ptr, C.int(response.len))
+	}
+	if response.ptr != nil {
+		C.free_host_buffer(response.ptr, response.len)
+	}
+	if len(rawResponse) == 0 {
+		return nil, fmt.Errorf("host callback returned no response, code=%d", int(callCode))
+	}
+	var envelope abi.Envelope
+	if err := json.Unmarshal(rawResponse, &envelope); err != nil {
+		return nil, fmt.Errorf("decode host callback response: %w", err)
+	}
+	if !envelope.OK {
+		if envelope.Error != nil {
+			return nil, fmt.Errorf("%s: %s", envelope.Error.Code, envelope.Error.Message)
+		}
+		return nil, fmt.Errorf("host callback failed")
+	}
+	if callCode != 0 {
+		return nil, fmt.Errorf("host callback returned code=%d", int(callCode))
+	}
+	return envelope.Result, nil
 }
 
 func okEnvelope(result []byte) []byte {

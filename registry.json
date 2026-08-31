@@ -6,7 +6,7 @@
       "name": "Quota & Credit (额度与费用统计)",
       "description": "高精度 Token 计量、A/U 双重成本核算、动态周期窗口、可视化控制看板与配额管理助手插件",
       "author": "Nei-Xin",
-      "version": "1.0.6",
+      "version": "1.0.7",
       "repository": "https://github.com/Nei-Xin/cpa-quota-credit",
       "homepage": "https://github.com/Nei-Xin/cpa-quota-credit",
       "license": "MIT",
@@ -17,22 +17,22 @@
           {
             "goos": "linux",
             "goarch": "amd64",
-            "url": "https://github.com/Nei-Xin/cpa-quota-credit/releases/download/v1.0.6/cpa-quota-credit-linux-amd64.tar.gz"
+            "url": "https://github.com/Nei-Xin/cpa-quota-credit/releases/download/v1.0.7/cpa-quota-credit-linux-amd64.tar.gz"
           },
           {
             "goos": "linux",
             "goarch": "arm64",
-            "url": "https://github.com/Nei-Xin/cpa-quota-credit/releases/download/v1.0.6/cpa-quota-credit-linux-arm64.tar.gz"
+            "url": "https://github.com/Nei-Xin/cpa-quota-credit/releases/download/v1.0.7/cpa-quota-credit-linux-arm64.tar.gz"
           },
           {
             "goos": "windows",
             "goarch": "amd64",
-            "url": "https://github.com/Nei-Xin/cpa-quota-credit/releases/download/v1.0.6/cpa-quota-credit-windows-amd64.zip"
+            "url": "https://github.com/Nei-Xin/cpa-quota-credit/releases/download/v1.0.7/cpa-quota-credit-windows-amd64.zip"
           },
           {
             "goos": "darwin",
             "goarch": "arm64",
-            "url": "https://github.com/Nei-Xin/cpa-quota-credit/releases/download/v1.0.6/cpa-quota-credit-darwin-arm64.tar.gz"
+            "url": "https://github.com/Nei-Xin/cpa-quota-credit/releases/download/v1.0.7/cpa-quota-credit-darwin-arm64.tar.gz"
           }
         ]
       }

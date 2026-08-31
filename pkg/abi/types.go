@@ -18,6 +18,7 @@ const (
 	MethodUsageHandle        = "usage.handle"
 	MethodManagementRegister = "management.register"
 	MethodManagementHandle   = "management.handle"
+	MethodHostAuthList       = "host.auth.list"
 )
 
 type Envelope struct {
