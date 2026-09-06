@@ -17,6 +17,7 @@ import (
 
 // ModelPricing holds the per-token pricing details for a model
 type ModelPricing struct {
+	LongContext272K
 	InputCostPerToken                   float64 `json:"input_cost_per_token"`
 	InputCostPerTokenPriority           float64 `json:"input_cost_per_token_priority,omitempty"`
 	OutputCostPerToken                  float64 `json:"output_cost_per_token"`
@@ -36,6 +37,7 @@ type ModelPricing struct {
 }
 
 type rawEntry struct {
+	LongContext272K
 	InputCostPerToken                   *float64 `json:"input_cost_per_token"`
 	InputCostPerTokenPriority           *float64 `json:"input_cost_per_token_priority"`
 	OutputCostPerToken                  *float64 `json:"output_cost_per_token"`
@@ -212,6 +214,7 @@ func (s *Service) parseData(body []byte) (map[string]*ModelPricing, error) {
 		}
 
 		p := &ModelPricing{
+			LongContext272K:       entry.LongContext272K,
 			LiteLLMProvider:       entry.LiteLLMProvider,
 			Mode:                  entry.Mode,
 			SupportsPromptCaching: entry.SupportsPromptCaching,

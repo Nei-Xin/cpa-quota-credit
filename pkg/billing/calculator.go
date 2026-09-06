@@ -246,6 +246,18 @@ func (c *Calculator) Calculate(input CostInput) *CostBreakdown {
 		cacheCreatePrice *= longInMult
 	}
 
+	// Explicit feed rates take precedence over generic long-context multipliers.
+	if modelPricing != nil && totalInputTokens > 272000 {
+		rates := modelPricing.LongContext272K.Rates(strings.ToLower(strings.TrimSpace(input.ServiceTier)))
+		prices := []*float64{&inputPrice, &outputPrice, &cacheReadPrice, &cacheCreatePrice}
+		for i, rate := range rates {
+			if rate > 0 {
+				*prices[i] = rate / tierMultiplier
+				longContextApplied = true
+			}
+		}
+	}
+
 	inCost := float64(tokens.input) * inputPrice * tierMultiplier
 	outCost := float64(tokens.output) * outputPrice * tierMultiplier
 	cReadCost := float64(tokens.cacheRead) * cacheReadPrice * tierMultiplier

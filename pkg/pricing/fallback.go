@@ -3,6 +3,27 @@ package pricing
 // DefaultFallbackPricing provides a robust static pricing dictionary
 // ensuring the plugin can operate even without external internet connectivity.
 var DefaultFallbackPricing = map[string]*ModelPricing{
+	// Snapshot of Wei-Shaw/model-price-repo gpt-6-astra rates, 2026-09-06.
+	"gpt-6-astra": {
+		InputCostPerToken:                   10e-6,
+		OutputCostPerToken:                  50e-6,
+		CacheReadInputTokenCost:             1e-6,
+		CacheCreationInputTokenCost:         12.5e-6,
+		InputCostPerTokenPriority:           20e-6,
+		OutputCostPerTokenPriority:          100e-6,
+		CacheReadInputTokenCostPriority:     2e-6,
+		CacheCreationInputTokenCostPriority: 25e-6,
+		SupportsPromptCaching:               true,
+		SupportsServiceTier:                 true,
+		LiteLLMProvider:                     "openai",
+		LongContext272K: LongContext272K{
+			Input: 20e-6, Output: 75e-6, CacheRead: 2e-6, CacheCreate: 25e-6,
+			InputPriority: 40e-6, OutputPriority: 150e-6,
+			CacheReadPriority: 4e-6, CacheCreatePriority: 50e-6,
+			InputFlex: 10e-6, OutputFlex: 37.5e-6,
+			CacheReadFlex: 1e-6, CacheCreateFlex: 12.5e-6,
+		},
+	},
 	// Claude models ($ per token: $3/M input = 3e-6, $15/M output = 1.5e-5)
 	"claude-3-7-sonnet": {
 		InputCostPerToken:           3e-06,
