@@ -31,6 +31,10 @@
 
 ## 🚀 3 步极速使用
 
+计费说明：A 为按模型价表和账号倍率计算的 API 估算费用，U 为按用户倍率计算的费用；不代表官方账单或订阅额度，不含工具调用等额外费用。未知模型或缺少 Priority/Fast 价格时保留用量、标记未计价，不计入金额。历史记录不自动重算。
+
+默认远程价表的 GPT-5.6 Sol 仍可能使用旧价，请合并 `config.example.yaml` 中的 `pricing.overrides`，显式价格优先于缓存及远程价格。该覆盖使用 2026-09-08 核对的官方促销价，后续调价时需更新。看板继续沿用 v1.0.8 的无需密码访问方式。
+
 ### 步骤 1：下载插件
 在 [Releases](https://github.com/Nei-Xin/cpa-quota-credit/releases) 页面下载对应系统的压缩包（如 Linux 下载 `cpa-quota-credit-linux-amd64.tar.gz`），解压得到 `cpa-quota-credit.so` 放入 `plugins/` 目录。
 

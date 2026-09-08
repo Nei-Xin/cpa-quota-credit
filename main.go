@@ -64,6 +64,8 @@ import (
 	"time"
 	"unsafe"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/router-for-me/cpa-quota-credit/pkg/abi"
 	"github.com/router-for-me/cpa-quota-credit/pkg/billing"
 	"github.com/router-for-me/cpa-quota-credit/pkg/dashboard"
@@ -183,18 +185,28 @@ func handleMethod(method string, reqBody []byte) ([]byte, error) {
 	switch method {
 	case abi.MethodPluginRegister, abi.MethodPluginReconfigure:
 		var regReq struct {
-			Config map[string]interface{} `json:"config"`
+			Config     map[string]interface{} `json:"config"`
+			ConfigYAML []byte                 `json:"config_yaml"`
 		}
 		if len(reqBody) > 0 {
-			_ = json.Unmarshal(reqBody, &regReq)
+			if err := json.Unmarshal(reqBody, &regReq); err != nil {
+				return nil, err
+			}
 		}
-		_ = initPluginComponents(regReq.Config)
+		if len(regReq.ConfigYAML) > 0 {
+			if err := yaml.Unmarshal(regReq.ConfigYAML, &regReq.Config); err != nil {
+				return nil, err
+			}
+		}
+		if err := initPluginComponents(regReq.Config); err != nil {
+			return nil, err
+		}
 
 		regResp := abi.PluginRegistration{
 			SchemaVersion: abi.SchemaVersion,
 			Metadata: abi.PluginMetadata{
 				Name:             "cpa-quota-credit",
-				Version:          "1.0.8",
+				Version:          "1.0.10",
 				Author:           "router-for-me",
 				GitHubRepository: "https://github.com/router-for-me/cpa-quota-credit",
 				Logo:             "https://raw.githubusercontent.com/router-for-me/CLIProxyAPI/main/assets/logo/antigravity.svg",

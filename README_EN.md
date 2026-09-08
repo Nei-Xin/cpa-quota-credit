@@ -31,6 +31,10 @@ A high-precision Token measurement and billing calculation plugin built for **CL
 
 ## 🚀 3-Step Quick Start
 
+A estimates API token cost with the account multiplier; U applies the user multiplier. These amounts are not official invoices or subscription allowances and exclude extra tool fees. Unknown models or missing Priority/Fast prices retain usage but are marked unpriced and excluded from monetary totals. Historical records are not recalculated.
+
+Merge `pricing.overrides` from `config.example.yaml` to avoid stale GPT-5.6 Sol remote rates. Explicit entries override cached and remote prices; the example uses official promotional rates checked on 2026-09-08 and needs updating when pricing changes. Dashboard access retains v1.0.8 behavior without a password.
+
 ### Step 1: Download the Plugin
 Download the pre-built archive for your OS from [Releases](https://github.com/Nei-Xin/cpa-quota-credit/releases) (e.g., `cpa-quota-credit-linux-amd64.tar.gz` for Linux), extract `cpa-quota-credit.so`, and place it in the `plugins/` directory.
 

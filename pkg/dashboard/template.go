@@ -121,7 +121,7 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
         <div class="header">
             <div class="title-group">
                 <h1>CLIProxyAPI 额度与计费控制中心</h1>
-                <p>实时高精度核算 Token 消耗与多维账单 (A: 上游真实成本 | U: 客户端计费额度)</p>
+                <p>实时高精度核算 Token 消耗与多维账单 (A: 上游 API 估算费用 | U: 客户端计费额度)</p>
             </div>
             
             <div class="badge-bar">
@@ -141,6 +141,7 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
             </div>
         </div>
 
+        <p id="pricing-note" style="margin-bottom:16px;color:var(--accent-amber)">金额为 Token 费用估算，不代表官方扣款或订阅额度；未计价请求不计入金额。</p>
         <div class="grid-3">
             <!-- 1. Client / User Keys -->
             <div class="card">
@@ -350,6 +351,7 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
         }
 
         function renderDashboard(data) {
+            document.getElementById('pricing-note').textContent = '金额为 Token 费用估算，不代表官方扣款或订阅额度；历史未计价请求：' + ((data.summary && data.summary.unpriced_requests) || 0) + '（未计入金额）。';
             const summaryStats = extractWindowStats(data.summary, currentWindow);
             
             // Render 4 Pill Badges
@@ -436,8 +438,8 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
                         '<td class="text-num">' + (c.input_tokens || 0) + ' / <span style="color: var(--accent-blue)">' + (c.cache_read_tokens || 0) + '</span></td>' +
                         '<td class="text-num">' + (c.output_tokens || 0) + ' / <span style="color: var(--accent-emerald)">' + (c.reasoning_tokens || 0) + '</span></td>' +
                         '<td class="text-num"><strong>' + (c.total_tokens || 0) + '</strong></td>' +
-                        '<td class="text-num cost-a">' + formatUSD(c.actual_cost) + '</td>' +
-                        '<td class="text-num cost-u">' + formatUSD(c.user_cost) + '</td>' +
+                        '<td class="text-num cost-a">' + (c.pricing_unavailable ? '未计价' : formatUSD(c.actual_cost)) + '</td>' +
+                        '<td class="text-num cost-u">' + (c.pricing_unavailable ? '未计价' : formatUSD(c.user_cost)) + '</td>' +
                         '</tr>';
                 }
                 logBody.innerHTML = lHtml;

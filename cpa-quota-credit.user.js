@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CPA Quota & Credit 额度与费用展示助手
 // @namespace    https://github.com/router-for-me/cpa-quota-credit
-// @version      1.0.7
+// @version      1.0.10
 // @description  在 CLIProxyAPI 账号卡片上分别呈现 5 小时与 7 天周期用量及 A/U 费用徽章
 // @author       router-for-me
 // @match        *://*/management.html*
@@ -13,7 +13,7 @@
 (function () {
     'use strict';
 
-    console.log('[CPA Quota Credit] Userscript v1.0.7 starting...');
+    console.log('[CPA Quota Credit] Userscript v1.0.10 starting...');
 
     // 1. 样式注入
     const style = document.createElement('style');
@@ -116,6 +116,18 @@
                 const res = await fetch(url);
                 if (res.ok) {
                     cachedStats = await res.json();
+                    let notice = document.getElementById('cpa-unpriced-notice');
+                    const count = (cachedStats.summary && cachedStats.summary.unpriced_requests) || 0;
+                    if (count && !notice) {
+                        notice = document.createElement('div');
+                        notice.id = 'cpa-unpriced-notice';
+                        notice.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:9999;padding:8px;background:#fef3c7;color:#92400e;border-radius:6px;font-size:12px';
+                        document.body.appendChild(notice);
+                    }
+                    if (notice) {
+                        notice.textContent = '额度助手：历史未计价 ' + count + ' 次，未计入费用';
+                        notice.hidden = !count;
+                    }
                     renderBadges();
                     break;
                 }
@@ -132,7 +144,7 @@
 
     function periodTipLine(label, stats) {
         const s = stats || {};
-        return `【本地 ${label}】请求: ${s.total_requests || 0} | Token: ${s.total_tokens || 0} | A成本: ${formatUSD(s.actual_cost)} | U计费: ${formatUSD(s.user_cost)}`;
+        return `【本地 ${label}】请求: ${s.total_requests || 0} | Token: ${s.total_tokens || 0} | A估算费用: ${formatUSD(s.actual_cost)} | U计费: ${formatUSD(s.user_cost)}`;
     }
 
     function buildPeriodRowHTML(label, stats, tip) {
@@ -150,7 +162,7 @@
 
     function buildPillBadgesHTML(fiveHourStats, sevenDayStats, totalStats, quota) {
         const total = totalStats || {};
-        const tip = `${periodTipLine('5 小时周期', fiveHourStats)}\n${periodTipLine('7 天周期', sevenDayStats)}\n${quotaTipLine('5 小时', quota && quota.five_hour)}\n${quotaTipLine('7 天', quota && quota.seven_day)}\n【历史】请求: ${total.total_requests || 0} | Token: ${total.total_tokens || 0} | A成本: ${formatUSD(total.actual_cost)} | U计费: ${formatUSD(total.user_cost)}`;
+        const tip = `${periodTipLine('5 小时周期', fiveHourStats)}\n${periodTipLine('7 天周期', sevenDayStats)}\n${quotaTipLine('5 小时', quota && quota.five_hour)}\n${quotaTipLine('7 天', quota && quota.seven_day)}\n【历史】请求: ${total.total_requests || 0} | Token: ${total.total_tokens || 0} | A估算费用: ${formatUSD(total.actual_cost)} | U计费: ${formatUSD(total.user_cost)}`;
 
         return buildPeriodRowHTML('5h', fiveHourStats, tip) +
             buildPeriodRowHTML('7d', sevenDayStats, tip);
