@@ -16,11 +16,24 @@ plugins:
         hash_url: "https://raw.githubusercontent.com/Wei-Shaw/model-price-repo/main/model_prices_and_context_window.sha256"
         update_interval_hours: 24
         fallback_file: "./data/model_pricing_fallback.json"
+        # 官方促销价（2026-09-08 核对）：避免远程旧价覆盖，后续官方调价时需更新。
+        # overrides 为完整价格条目，优先于缓存和远程价表。
+        overrides:
+          gpt-5.6-sol:
+            input_cost_per_token: 0.000004
+            output_cost_per_token: 0.000020
+            cache_read_input_token_cost: 0.0000004
+            cache_creation_input_token_cost: 0.000005
+            supports_prompt_caching: true
+            litellm_provider: openai
+            long_context_input_token_threshold: 272000
+            long_context_input_cost_multiplier: 2
+            long_context_output_cost_multiplier: 1.5
         
-      # 计费与成本倍率配置 (对应 A $ 实际成本 与 U $ 用户扣费)
+      # 计费与成本倍率配置 (对应 A $ 估算费用 与 U $ 用户扣费)
       multipliers:
         default_user_multiplier: 1.0     # 默认用户扣费倍率 (U $)
-        default_account_multiplier: 1.0  # 默认上游成本倍率 (A $)
+        default_account_multiplier: 1.0  # 默认上游估算费用倍率 (A $)
         
         # 针对特定下游 API Key 单独设置扣费倍率 (影响 U $)
         key_multipliers:

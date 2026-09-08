@@ -121,7 +121,7 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
         <div class="header">
             <div class="title-group">
                 <h1>CLIProxyAPI 额度与计费控制中心</h1>
-                <p>实时高精度核算 Token 消耗与多维账单 (A: 上游真实成本 | U: 客户端计费额度)</p>
+                <p>实时高精度核算 Token 消耗与多维账单 (A: 上游 API 估算费用 | U: 客户端计费额度)</p>
             </div>
             
             <div class="badge-bar">
@@ -141,6 +141,14 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
             </div>
         </div>
 
+        <form id="quota-auth" class="badge-bar" style="margin-bottom: 20px;">
+            <label for="management-key">CPA 管理密钥</label>
+            <input id="management-key" type="password" autocomplete="off" placeholder="仅用于当前页面" class="refresh-btn" required>
+            <button class="refresh-btn" type="submit">连接 / 更新密钥</button>
+            <span id="auth-status" role="status">输入管理密钥后加载统计</span>
+        </form>
+
+        <p id="pricing-note" style="margin-bottom:16px;color:var(--accent-amber)">金额为按价表估算的 Token 费用，不代表官方扣款或订阅额度；不含工具调用等额外费用。</p>
         <div class="grid-3">
             <!-- 1. Client / User Keys -->
             <div class="card">
@@ -330,26 +338,53 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
             return '<div class="quota-list auth-cost-list">' + rows.join('') + '</div>';
         }
 
+        let managementKey = '';
+        let isFetching = false;
+        document.getElementById('quota-auth').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const input = document.getElementById('management-key');
+            managementKey = input.value.trim();
+            input.value = '';
+            cachedFullData = null;
+            renderDashboard({});
+            fetchStats();
+        });
+
         async function fetchStats() {
-            const endpoints = [
-                '/v0/resource/plugins/cpa-quota-credit/stats',
-                '/v0/resource/plugins/cpa-quota-credit/dashboard?format=json',
-                '/v0/management/plugins/cpa-quota-credit/stats'
-            ];
-            
-            for (let i = 0; i < endpoints.length; i++) {
-                try {
-                    const res = await fetch(endpoints[i]);
-                    if (res.ok) {
-                        cachedFullData = await res.json();
-                        renderDashboard(cachedFullData);
-                        return;
-                    }
-                } catch (err) {}
+            if (!managementKey || isFetching) return;
+            isFetching = true;
+            const key = managementKey;
+            const status = document.getElementById('auth-status');
+            status.textContent = '正在加载…';
+            try {
+                const res = await fetch('/v0/management/plugins/cpa-quota-credit/stats', {
+                    headers: { Authorization: 'Bearer ' + key },
+                    cache: 'no-store',
+                    redirect: 'error'
+                });
+                if (key !== managementKey) return;
+                if (res.status === 401 || res.status === 403) {
+                    managementKey = '';
+                    cachedFullData = null;
+                    renderDashboard({});
+                    status.textContent = '鉴权失败，请检查管理密钥及 CPA 远程管理设置';
+                    return;
+                }
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                if (key !== managementKey) return;
+                cachedFullData = data;
+                renderDashboard(data);
+                status.textContent = '已连接，每 5 秒刷新';
+            } catch (err) {
+                if (key === managementKey) status.textContent = '加载失败：' + err.message;
+            } finally {
+                isFetching = false;
             }
         }
 
         function renderDashboard(data) {
+            document.getElementById('pricing-note').textContent = '金额为按价表估算的 Token 费用，不代表官方扣款或订阅额度；不含工具调用等额外费用。历史未计价请求：' + ((data.summary && data.summary.unpriced_requests) || 0) + '（未计入金额）。';
             const summaryStats = extractWindowStats(data.summary, currentWindow);
             
             // Render 4 Pill Badges
@@ -436,8 +471,8 @@ const HTMLDashboardTemplate = `<!DOCTYPE html>
                         '<td class="text-num">' + (c.input_tokens || 0) + ' / <span style="color: var(--accent-blue)">' + (c.cache_read_tokens || 0) + '</span></td>' +
                         '<td class="text-num">' + (c.output_tokens || 0) + ' / <span style="color: var(--accent-emerald)">' + (c.reasoning_tokens || 0) + '</span></td>' +
                         '<td class="text-num"><strong>' + (c.total_tokens || 0) + '</strong></td>' +
-                        '<td class="text-num cost-a">' + formatUSD(c.actual_cost) + '</td>' +
-                        '<td class="text-num cost-u">' + formatUSD(c.user_cost) + '</td>' +
+                        '<td class="text-num cost-a">' + (c.pricing_unavailable ? '未计价' : formatUSD(c.actual_cost)) + '</td>' +
+                        '<td class="text-num cost-u">' + (c.pricing_unavailable ? '未计价' : formatUSD(c.user_cost)) + '</td>' +
                         '</tr>';
                 }
                 logBody.innerHTML = lHtml;

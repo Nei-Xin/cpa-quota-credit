@@ -79,14 +79,15 @@ jobs:
         shell: pwsh
         run: |
           $archiveName = "cpa-quota-credit-${{ matrix.target }}.zip"
-          Compress-Archive -Path dist/cpa-quota-credit.dll, README.md, config.example.yaml, cpa-quota-credit.user.js -DestinationPath $archiveName
+          Compress-Archive -Path dist/cpa-quota-credit.dll, README.md, RELEASE_NOTES.md, patches, config.example.yaml, cpa-quota-credit.user.js -DestinationPath $archiveName
 
       - name: Package Artifacts (Linux / macOS)
         if: matrix.os != 'windows-latest'
         shell: bash
         run: |
           ARCHIVE_NAME="cpa-quota-credit-${{ matrix.target }}.${{ matrix.pkg_ext }}"
-          cp README.md config.example.yaml dist/
+          cp README.md RELEASE_NOTES.md config.example.yaml dist/
+          cp -r patches dist/
           cp cpa-quota-credit.user.js dist/ 2>/dev/null || true
           cd dist
           tar -czvf "../${ARCHIVE_NAME}" *
@@ -124,6 +125,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: release-assets/*
+          body_path: RELEASE_NOTES.md
           generate_release_notes: true
           draft: false
           prerelease: false

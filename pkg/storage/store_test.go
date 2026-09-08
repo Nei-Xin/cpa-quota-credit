@@ -7,7 +7,27 @@ import (
 	"time"
 
 	"github.com/router-for-me/cpa-quota-credit/pkg/billing"
+	"github.com/router-for-me/cpa-quota-credit/pkg/pricing"
 )
+
+func TestUnpricedUsageIsVisible(t *testing.T) {
+	s, err := NewStore(filepath.Join(t.TempDir(), "unpriced.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	cost := billing.NewCalculator(pricing.NewService(pricing.Config{}), billing.MultiplierConfig{}).Calculate(billing.CostInput{Model: "gpt-unknown", Provider: "openai", InputTokens: 100, OutputTokens: 20})
+	if err := s.RecordUsage(Record{Model: "gpt-unknown", Cost: cost}); err != nil {
+		t.Fatal(err)
+	}
+	stats, err := s.GetFullStats(50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Summary.UnpricedRequests != 1 || stats.Summary.TotalTokens != 120 || stats.Summary.ActualCost != 0 || !stats.RecentLogs[0].Cost.PricingUnavailable {
+		t.Fatalf("unpriced usage not preserved: %+v", stats)
+	}
+}
 
 func TestStore_RecordAndAggregate(t *testing.T) {
 	tempDir := t.TempDir()

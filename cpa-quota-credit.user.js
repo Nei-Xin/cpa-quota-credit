@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CPA Quota & Credit 额度与费用展示助手
 // @namespace    https://github.com/router-for-me/cpa-quota-credit
-// @version      1.0.7
+// @version      1.0.9
 // @description  在 CLIProxyAPI 账号卡片上分别呈现 5 小时与 7 天周期用量及 A/U 费用徽章
 // @author       router-for-me
 // @match        *://*/management.html*
@@ -13,7 +13,7 @@
 (function () {
     'use strict';
 
-    console.log('[CPA Quota Credit] Userscript v1.0.7 starting...');
+    console.log('[CPA Quota Credit] Userscript v1.0.9 starting...');
 
     // 1. 样式注入
     const style = document.createElement('style');
@@ -90,6 +90,26 @@
     let isFetching = false;
     let isRendering = false;
 
+    // Keep the management key in this page only; never persist it or put it in a URL.
+    let managementKey = '';
+    const authForm = document.createElement('form');
+    authForm.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:9999;background:#f1f5f9;color:#0f172a;padding:10px;border:1px solid #94a3b8;border-radius:8px;font-size:12px;max-width:90vw';
+    authForm.innerHTML = '<label>额度助手 · CPA 管理密钥 <input type="password" autocomplete="off" placeholder="仅用于当前页面" required></label> <button type="submit">连接 / 更新密钥</button><div role="status">输入管理密钥后加载徽章</div>';
+    document.body.appendChild(authForm);
+    const authInput = authForm.querySelector('input');
+    const authStatus = authForm.querySelector('[role="status"]');
+    function clearStats() {
+        cachedStats = null;
+        document.querySelectorAll('.cpa-card-badge-container').forEach(el => el.remove());
+    }
+    authForm.addEventListener('submit', event => {
+        event.preventDefault();
+        managementKey = authInput.value.trim();
+        authInput.value = '';
+        clearStats();
+        fetchStats();
+    });
+
     function formatNumber(num) {
         if (!num || isNaN(num)) return '0';
         if (num >= 1000000000) return (num / 1000000000).toFixed(1) + 'B';
@@ -103,25 +123,34 @@
     }
 
     async function fetchStats() {
-        if (isFetching) return;
+        if (!managementKey || isFetching) return;
         isFetching = true;
-        
-        const endpoints = [
-            '/v0/resource/plugins/cpa-quota-credit/stats',
-            '/v0/resource/plugins/cpa-quota-credit/dashboard?format=json'
-        ];
-
-        for (let url of endpoints) {
-            try {
-                const res = await fetch(url);
-                if (res.ok) {
-                    cachedStats = await res.json();
-                    renderBadges();
-                    break;
-                }
-            } catch (e) {}
+        const key = managementKey;
+        authStatus.textContent = '正在加载…';
+        try {
+            const res = await fetch('/v0/management/plugins/cpa-quota-credit/stats', {
+                headers: { Authorization: 'Bearer ' + key },
+                cache: 'no-store',
+                redirect: 'error'
+            });
+            if (key !== managementKey) return;
+            if (res.status === 401 || res.status === 403) {
+                managementKey = '';
+                clearStats();
+                authStatus.textContent = '鉴权失败，请检查管理密钥及 CPA 远程管理设置';
+                return;
+            }
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            if (key !== managementKey) return;
+            cachedStats = data;
+            renderBadges();
+            authStatus.textContent = '已连接 · A 为 API 估算费用 · 历史未计价 ' + ((data.summary && data.summary.unpriced_requests) || 0) + ' 次（未计入金额）';
+        } catch (e) {
+            if (key === managementKey) authStatus.textContent = '加载失败：' + e.message;
+        } finally {
+            isFetching = false;
         }
-        isFetching = false;
     }
 
     function quotaTipLine(label, quota) {
@@ -286,7 +315,7 @@
     const observer = new MutationObserver((mutations) => {
         // 过滤掉自身 badge 产生的变动
         const isSelfMutation = mutations.every(m => {
-            return m.target && (m.target.classList?.contains('cpa-card-badge-container') || m.target.classList?.contains('cpa-pill'));
+            return m.target && (authForm.contains(m.target) || m.target.classList?.contains('cpa-card-badge-container') || m.target.classList?.contains('cpa-pill'));
         });
         if (isSelfMutation) return;
 

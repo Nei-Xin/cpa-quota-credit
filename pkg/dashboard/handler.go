@@ -14,6 +14,12 @@ type Handler struct {
 	store *storage.Store
 }
 
+// IsStatsRequest only accepts the full management path forwarded by CPA after
+// its management authentication middleware has succeeded.
+func IsStatsRequest(req abi.ManagementRequest) bool {
+	return req.Method == http.MethodGet && req.Path == "/v0/management/plugins/cpa-quota-credit/stats"
+}
+
 func NewHandler(store *storage.Store) *Handler {
 	return &Handler{store: store}
 }
@@ -29,19 +35,14 @@ func (h *Handler) HandleRequestWithAuthFilter(req abi.ManagementRequest, activeA
 }
 
 func (h *Handler) handleRequest(req abi.ManagementRequest, activeAuthIDs map[string]struct{}) abi.ManagementResponse {
-	path := strings.TrimSpace(req.Path)
-
-	// Common security and iframe compatibility headers
+	// Allow the static dashboard to be embedded by the same-origin management UI.
 	commonHeaders := http.Header{
-		"Access-Control-Allow-Origin": []string{"*"},
-		"Access-Control-Allow-Methods": []string{"GET, POST, OPTIONS"},
-		"Access-Control-Allow-Headers": []string{"*"},
-		"Content-Security-Policy":     []string{"frame-ancestors 'self' *;"},
-		"X-Frame-Options":             []string{"ALLOWALL"},
+		"Content-Security-Policy": []string{"frame-ancestors 'self';"},
+		"X-Frame-Options":         []string{"SAMEORIGIN"},
 	}
 
-	// 1. Stats JSON API (Checked first or when query parameter format=json)
-	if strings.HasSuffix(path, "/stats") || strings.HasSuffix(path, "/api/stats") || req.Query.Get("format") == "json" {
+	if IsStatsRequest(req) {
+		commonHeaders.Set("Cache-Control", "no-store")
 		stats, err := h.store.GetFullStats(50)
 		if err != nil {
 			commonHeaders.Set("Content-Type", "application/json; charset=utf-8")
@@ -70,7 +71,7 @@ func (h *Handler) handleRequest(req abi.ManagementRequest, activeAuthIDs map[str
 	}
 
 	// 2. Dashboard UI HTML Resource (Supports iframe embedding inside CPAMC)
-	if path == "" || path == "/" || strings.HasSuffix(path, "/dashboard") || strings.HasSuffix(path, "/status") {
+	if req.Method == http.MethodGet && req.Path == "/v0/resource/plugins/cpa-quota-credit/dashboard" {
 		commonHeaders.Set("Content-Type", "text/html; charset=utf-8")
 		return abi.ManagementResponse{
 			StatusCode: http.StatusOK,

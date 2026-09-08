@@ -1,0 +1,15 @@
+diff --git a/internal/pluginhost/rpc_client.go b/internal/pluginhost/rpc_client.go
+index 881f232c..f3e6cfdd 100644
+--- a/internal/pluginhost/rpc_client.go
++++ b/internal/pluginhost/rpc_client.go
+@@ -537,6 +537,10 @@ func (a rpcThinkingApplier) ApplyThinking(ctx context.Context, req pluginapi.Thi
+ }
+ 
+ func (a *rpcPluginAdapter) HandleUsage(ctx context.Context, record pluginapi.UsageRecord) {
++	// Usage is dispatched asynchronously after the HTTP request can finish.
++	if ctx != nil {
++		ctx = context.WithoutCancel(ctx)
++	}
+ 	_, _ = callPlugin[rpcEmptyResponse](ctx, a.client, pluginabi.MethodUsageHandle, record)
+ }
+ 
