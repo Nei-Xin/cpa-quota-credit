@@ -57,13 +57,11 @@ type rawEntry struct {
 }
 
 type Config struct {
-	// Overrides are complete price entries and take precedence over cached/remote data.
-	Overrides           map[string]*ModelPricing `json:"overrides,omitempty"`
-	RemoteURL           string                   `json:"remote_url"`
-	HashURL             string                   `json:"hash_url"`
-	DataDir             string                   `json:"data_dir"`
-	FallbackFile        string                   `json:"fallback_file"`
-	UpdateIntervalHours int                      `json:"update_interval_hours"`
+	RemoteURL           string `json:"remote_url"`
+	HashURL             string `json:"hash_url"`
+	DataDir             string `json:"data_dir"`
+	FallbackFile        string `json:"fallback_file"`
+	UpdateIntervalHours int    `json:"update_interval_hours"`
 }
 
 type Service struct {
@@ -274,18 +272,6 @@ func (s *Service) GetModelPricing(modelName string) *ModelPricing {
 
 	modelLower := strings.ToLower(strings.TrimSpace(modelName))
 	candidates := buildModelLookupCandidates(modelLower)
-	for _, cand := range candidates {
-		base := openAIModelDatePattern.ReplaceAllString(cand, "")
-		if base == "gpt-5.6" {
-			base = "gpt-5.6-sol"
-		}
-		if p := s.cfg.Overrides[cand]; p != nil {
-			return p
-		}
-		if p := s.cfg.Overrides[base]; p != nil {
-			return p
-		}
-	}
 
 	// 1. Exact match across candidates
 	for _, cand := range candidates {
@@ -299,17 +285,6 @@ func (s *Service) GetModelPricing(modelName string) *ModelPricing {
 	}
 
 	// 2. Base name match (without date suffix)
-	// OpenAI variants have distinct prices. Only strip a date suffix, never a
-	// variant such as -mini or -pro, and never substitute a different model.
-	for _, cand := range candidates {
-		if strings.HasPrefix(cand, "gpt-") || strings.HasPrefix(cand, "o1") || strings.HasPrefix(cand, "o3") || strings.HasPrefix(cand, "o4") {
-			base := openAIModelDatePattern.ReplaceAllString(cand, "")
-			if base == "gpt-5.6" {
-				base = "gpt-5.6-sol"
-			}
-			return s.pricingData[base]
-		}
-	}
 	baseName := extractBaseName(candidates[0])
 	for key, p := range s.pricingData {
 		if extractBaseName(strings.ToLower(key)) == baseName {
@@ -334,6 +309,24 @@ func (s *Service) GetModelPricing(modelName string) *ModelPricing {
 					}
 				}
 			}
+		}
+	}
+
+	// 4. OpenAI fallback matching
+	if strings.HasPrefix(modelLower, "gpt-") || strings.HasPrefix(modelLower, "o1") || strings.HasPrefix(modelLower, "o3") {
+		// Date stripped
+		withoutDate := openAIModelDatePattern.ReplaceAllString(modelLower, "")
+		if p, ok := s.pricingData[withoutDate]; ok {
+			return p
+		}
+		// Base version
+		if matches := openAIModelBasePattern.FindStringSubmatch(modelLower); len(matches) > 1 {
+			if p, ok := s.pricingData[matches[1]]; ok {
+				return p
+			}
+		}
+		if p, ok := s.pricingData["gpt-4o"]; ok {
+			return p
 		}
 	}
 

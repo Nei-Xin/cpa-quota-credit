@@ -6,7 +6,8 @@ import (
 )
 
 var (
-	openAIModelDatePattern = regexp.MustCompile(`-(?:\d{8}|\d{4}-\d{2}-\d{2})$`)
+	openAIModelDatePattern = regexp.MustCompile(`-\d{8}$`)
+	openAIModelBasePattern = regexp.MustCompile(`^(gpt-\d+(?:\.\d+)?)(?:-|$)`)
 )
 
 func isNumeric(s string) bool {

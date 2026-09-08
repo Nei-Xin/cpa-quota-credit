@@ -54,14 +54,13 @@ type QuotaSnapshot struct {
 }
 
 type GlobalSummary struct {
-	UnpricedRequests int64       `json:"unpriced_requests"`
-	TotalRequests    int64       `json:"total_requests"`
-	TotalTokens      int64       `json:"total_tokens"`
-	ActualCost       float64     `json:"actual_cost"`
-	UserCost         float64     `json:"user_cost"`
-	FiveHour         *WindowStat `json:"five_hour,omitempty"`
-	SevenDay         *WindowStat `json:"seven_day,omitempty"`
-	LastUpdated      time.Time   `json:"last_updated"`
+	TotalRequests int64       `json:"total_requests"`
+	TotalTokens   int64       `json:"total_tokens"`
+	ActualCost    float64     `json:"actual_cost"`
+	UserCost      float64     `json:"user_cost"`
+	FiveHour      *WindowStat `json:"five_hour,omitempty"`
+	SevenDay      *WindowStat `json:"seven_day,omitempty"`
+	LastUpdated   time.Time   `json:"last_updated"`
 }
 
 type KeyStat struct {
@@ -189,9 +188,6 @@ func (s *Store) RecordUsage(record Record) error {
 			_ = json.Unmarshal(v, &global)
 		}
 		global.TotalRequests++
-		if record.Cost.PricingUnavailable {
-			global.UnpricedRequests++
-		}
 		global.TotalTokens += tokens
 		global.ActualCost = billing.QuantizeAmount(global.ActualCost + actualCost)
 		global.UserCost = billing.QuantizeAmount(global.UserCost + userCost)

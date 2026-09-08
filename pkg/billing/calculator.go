@@ -32,15 +32,13 @@ type CostInput struct {
 }
 
 type CostBreakdown struct {
-	// Missing model prices retain usage but contribute no estimated charge.
-	PricingUnavailable bool   `json:"pricing_unavailable,omitempty"`
-	Model              string `json:"model"`
-	InputTokens        int64  `json:"input_tokens"`
-	OutputTokens       int64  `json:"output_tokens"`
-	ReasoningTokens    int64  `json:"reasoning_tokens"`
-	CacheReadTokens    int64  `json:"cache_read_tokens"`
-	CacheCreateTokens  int64  `json:"cache_create_tokens"`
-	TotalTokens        int64  `json:"total_tokens"`
+	Model             string `json:"model"`
+	InputTokens       int64  `json:"input_tokens"`
+	OutputTokens      int64  `json:"output_tokens"`
+	ReasoningTokens   int64  `json:"reasoning_tokens"`
+	CacheReadTokens   int64  `json:"cache_read_tokens"`
+	CacheCreateTokens int64  `json:"cache_create_tokens"`
+	TotalTokens       int64  `json:"total_tokens"`
 
 	InputCost         float64 `json:"input_cost"`
 	OutputCost        float64 `json:"output_cost"`
@@ -51,7 +49,7 @@ type CostBreakdown struct {
 	UserMultiplier    float64 `json:"user_multiplier"`
 	AccountMultiplier float64 `json:"account_multiplier"`
 
-	// A: Estimated upstream API-equivalent cost, not an upstream invoice.
+	// A: Actual / Admin / Upstream cost
 	ActualCost float64 `json:"actual_cost"`
 	// U: User cost / Billed quota
 	UserCost float64 `json:"user_cost"`
@@ -173,16 +171,12 @@ func (c *Calculator) Calculate(input CostInput) *CostBreakdown {
 	modelPricing := c.pricingService.GetModelPricing(input.Model)
 	tokens := normalizeUsageTokens(input)
 
-	if modelPricing == nil {
-		return unpricedCost(input.Model, tokens)
-	}
-
-	// Known models use their price entries, including explicit zero rates.
+	// Fallback rates if unknown model: $2.5/M input, $10/M output
 	var (
-		inputPrice       = modelPricing.InputCostPerToken
-		outputPrice      = modelPricing.OutputCostPerToken
-		cacheReadPrice   = modelPricing.CacheReadInputTokenCost
-		cacheCreatePrice = modelPricing.CacheCreationInputTokenCost
+		inputPrice       = 2.5e-06
+		outputPrice      = 1.0e-05
+		cacheReadPrice   = 2.5e-07
+		cacheCreatePrice = 3.125e-06
 		longThreshold    = 0
 		longInMult       = 1.0
 		longOutMult      = 1.0
@@ -207,15 +201,9 @@ func (c *Calculator) Calculate(input CostInput) *CostBreakdown {
 			cacheCreatePrice = inputPrice * 1.25
 		}
 
-		// Priority prices must be explicit; a universal 2x multiplier is not a rate card.
+		// Apply explicit tier prices when available; otherwise use Sub2API's tier multiplier.
 		tier := strings.ToLower(strings.TrimSpace(input.ServiceTier))
 		if tier == "priority" || tier == "fast" {
-			if (tokens.input > 0 && modelPricing.InputCostPerTokenPriority <= 0) ||
-				(tokens.output > 0 && modelPricing.OutputCostPerTokenPriority <= 0) ||
-				(tokens.cacheRead > 0 && modelPricing.CacheReadInputTokenCostPriority <= 0) ||
-				(tokens.cacheCreation > 0 && modelPricing.CacheCreationInputTokenCostPriority <= 0) {
-				return unpricedCost(input.Model, tokens)
-			}
 			hasPriorityPrices := modelPricing.InputCostPerTokenPriority > 0 ||
 				modelPricing.OutputCostPerTokenPriority > 0 ||
 				modelPricing.CacheReadInputTokenCostPriority > 0 ||
@@ -231,6 +219,9 @@ func (c *Calculator) Calculate(input CostInput) *CostBreakdown {
 			}
 			if hasPriorityPrices && modelPricing.CacheCreationInputTokenCostPriority > 0 {
 				cacheCreatePrice = modelPricing.CacheCreationInputTokenCostPriority
+			}
+			if !hasPriorityPrices {
+				tierMultiplier = 2.0
 			}
 		} else if tier == "flex" {
 			tierMultiplier = 0.5
@@ -322,15 +313,5 @@ func (c *Calculator) Calculate(input CostInput) *CostBreakdown {
 		UserCost:           userCost,
 		LongContextApplied: longContextApplied,
 		ServiceTierApplied: strings.ToLower(strings.TrimSpace(input.ServiceTier)) != "",
-	}
-}
-
-func unpricedCost(model string, tokens normalizedTokens) *CostBreakdown {
-	return &CostBreakdown{
-		Model: model, PricingUnavailable: true,
-		InputTokens: tokens.input, OutputTokens: tokens.output,
-		ReasoningTokens: tokens.reasoning, CacheReadTokens: tokens.cacheRead,
-		CacheCreateTokens: tokens.cacheCreation,
-		TotalTokens:       tokens.input + tokens.output + tokens.cacheRead + tokens.cacheCreation,
 	}
 }

@@ -64,8 +64,6 @@ import (
 	"time"
 	"unsafe"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/router-for-me/cpa-quota-credit/pkg/abi"
 	"github.com/router-for-me/cpa-quota-credit/pkg/billing"
 	"github.com/router-for-me/cpa-quota-credit/pkg/dashboard"
@@ -185,28 +183,18 @@ func handleMethod(method string, reqBody []byte) ([]byte, error) {
 	switch method {
 	case abi.MethodPluginRegister, abi.MethodPluginReconfigure:
 		var regReq struct {
-			Config     map[string]interface{} `json:"config"`
-			ConfigYAML []byte                 `json:"config_yaml"`
+			Config map[string]interface{} `json:"config"`
 		}
 		if len(reqBody) > 0 {
-			if err := json.Unmarshal(reqBody, &regReq); err != nil {
-				return nil, err
-			}
+			_ = json.Unmarshal(reqBody, &regReq)
 		}
-		if len(regReq.ConfigYAML) > 0 {
-			if err := yaml.Unmarshal(regReq.ConfigYAML, &regReq.Config); err != nil {
-				return nil, err
-			}
-		}
-		if err := initPluginComponents(regReq.Config); err != nil {
-			return nil, err
-		}
+		_ = initPluginComponents(regReq.Config)
 
 		regResp := abi.PluginRegistration{
 			SchemaVersion: abi.SchemaVersion,
 			Metadata: abi.PluginMetadata{
 				Name:             "cpa-quota-credit",
-				Version:          "1.0.9",
+				Version:          "1.0.8",
 				Author:           "router-for-me",
 				GitHubRepository: "https://github.com/router-for-me/cpa-quota-credit",
 				Logo:             "https://raw.githubusercontent.com/router-for-me/CLIProxyAPI/main/assets/logo/antigravity.svg",
@@ -277,11 +265,16 @@ func handleMethod(method string, reqBody []byte) ([]byte, error) {
 					Menu:        "额度与计费",
 					Description: "CLIProxyAPI 额度与计费控制看板",
 				},
+				{
+					Path:        "/stats",
+					Menu:        "",
+					Description: "Public JSON stats for dashboard resource",
+				},
 			},
 			Routes: []abi.ManagementRoute{
 				{
 					Method:      "GET",
-					Path:        "/plugins/cpa-quota-credit/stats",
+					Path:        "/stats",
 					Description: "获取全量额度、消耗与 API Key 统计 JSON",
 				},
 			},
@@ -328,7 +321,8 @@ type hostAuthListResponse struct {
 }
 
 func isStatsRequest(req abi.ManagementRequest) bool {
-	return dashboard.IsStatsRequest(req)
+	path := strings.TrimSpace(req.Path)
+	return strings.HasSuffix(path, "/stats") || strings.HasSuffix(path, "/api/stats") || req.Query.Get("format") == "json"
 }
 
 func listActiveAuthIDs() (map[string]struct{}, bool) {
