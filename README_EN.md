@@ -33,7 +33,9 @@ A high-precision Token measurement and billing calculation plugin built for **CL
 
 A estimates API token cost with the account multiplier; U applies the user multiplier. These amounts are not official invoices or subscription allowances and exclude extra tool fees. Unknown models or missing Priority/Fast prices retain usage but are marked unpriced and excluded from monetary totals. Historical records are not recalculated.
 
-Merge `pricing.overrides` from `config.example.yaml` to avoid stale GPT-5.6 Sol remote rates. Explicit entries override cached and remote prices; the example uses official promotional rates checked on 2026-09-08 and needs updating when pricing changes. Dashboard access retains v1.0.8 behavior without a password.
+When available, the response service tier takes precedence over the requested tier for cost estimation. Pricing configuration reloads take effect immediately. Usage write failures are logged and reported to the host, without automatic retry.
+
+Built-in prices cover GPT-6 Astra/Sol/Luna, GPT-5.6 Cyber, and GPT-5.3 Codex (GPT-6 rates checked against official OpenAI [API pricing](https://developers.openai.com/api/docs/pricing) on 2026-09-23). Remote prices may replace built-in rates; merge `pricing.overrides` from `config.example.yaml` if the remote feed is stale. Explicit entries override cached and remote prices. GPT-5.6 Sol promotional rates need updating when pricing changes. Dashboard access retains v1.0.8 behavior without a password.
 
 ### Step 1: Download the Plugin
 Download the pre-built archive for your OS from [Releases](https://github.com/Nei-Xin/cpa-quota-credit/releases) (e.g., `cpa-quota-credit-linux-amd64.tar.gz` for Linux), extract `cpa-quota-credit.so`, and place it in the `plugins/` directory.

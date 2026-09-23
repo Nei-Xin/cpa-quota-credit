@@ -33,7 +33,9 @@
 
 计费说明：A 为按模型价表和账号倍率计算的 API 估算费用，U 为按用户倍率计算的费用；不代表官方账单或订阅额度，不含工具调用等额外费用。未知模型或缺少 Priority/Fast 价格时保留用量、标记未计价，不计入金额。历史记录不自动重算。
 
-默认远程价表的 GPT-5.6 Sol 仍可能使用旧价，请合并 `config.example.yaml` 中的 `pricing.overrides`，显式价格优先于缓存及远程价格。该覆盖使用 2026-09-08 核对的官方促销价，后续调价时需更新。看板继续沿用 v1.0.8 的无需密码访问方式。
+有响应服务档位时优先按实际响应档位估算费用，否则回退到请求档位。价格配置重载立即生效；用量写入失败会记录错误并通知宿主，不会自动补记。
+
+内置 GPT-6 Astra/Sol/Luna、GPT-5.6 Cyber 和 GPT-5.3 Codex 等价格（GPT-6 于 2026-09-23 对照 OpenAI 官方 [API 价表](https://developers.openai.com/api/docs/pricing)）。默认远程价表可能覆盖内置价格；如遇旧价，请合并 `config.example.yaml` 中的 `pricing.overrides`，显式价格优先于缓存及远程价格。GPT-5.6 Sol 为促销价，后续调价时需更新。看板继续沿用 v1.0.8 的无需密码访问方式。
 
 ### 步骤 1：下载插件
 在 [Releases](https://github.com/Nei-Xin/cpa-quota-credit/releases) 页面下载对应系统的压缩包（如 Linux 下载 `cpa-quota-credit-linux-amd64.tar.gz`），解压得到 `cpa-quota-credit.so` 放入 `plugins/` 目录。

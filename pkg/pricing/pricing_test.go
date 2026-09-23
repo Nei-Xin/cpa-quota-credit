@@ -4,7 +4,37 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
+
+func TestStopCancelsRemoteSync(t *testing.T) {
+	started := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+	}))
+	t.Cleanup(server.Close)
+	svc := NewService(Config{RemoteURL: server.URL, DataDir: t.TempDir()})
+	if err := svc.Initialize(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svc.Stop)
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("remote sync did not start")
+	}
+	stopped := make(chan struct{})
+	go func() {
+		svc.Stop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("stopping pricing service did not cancel remote sync")
+	}
+}
 
 func TestOverrideSurvivesRemoteSync(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +65,10 @@ func TestPricingService_GetModelPricing(t *testing.T) {
 		{"claude-opus-5", "anthropic"},
 		{"gpt-4o", "openai"},
 		{"gpt-5.1-codex", "openai"},
+		{"gpt-5.3-codex", "openai"},
+		{"openai/gpt-6-sol-2026-09-23", "openai"},
+		{"gpt-6-luna", "openai"},
+		{"gpt-5.6-cyber", "openai"},
 		{"models/gemini-2.5-pro", "vertex_ai"},
 		{"gemini-3.6-flash-high", "vertex_ai"},
 		{"deepseek-reasoner", "deepseek"},
@@ -54,7 +88,7 @@ func TestPricingService_GetModelPricing(t *testing.T) {
 
 func TestOpenAIModelMatchingDoesNotSubstituteVariants(t *testing.T) {
 	svc := NewService(Config{})
-	for _, model := range []string{"gpt-unknown", "gpt-5.4-unknown", "openai/gpt-5.4-unknown"} {
+	for _, model := range []string{"gpt-unknown", "gpt-5.4-unknown", "openai/gpt-5.4-unknown", "gpt-6-sol-unknown"} {
 		if svc.GetModelPricing(model) != nil {
 			t.Fatalf("unexpected price for %s", model)
 		}

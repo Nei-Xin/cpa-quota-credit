@@ -3,7 +3,7 @@ package pricing
 // DefaultFallbackPricing provides a robust static pricing dictionary
 // ensuring the plugin can operate even without external internet connectivity.
 var DefaultFallbackPricing = map[string]*ModelPricing{
-	// Snapshot of Wei-Shaw/model-price-repo gpt-6-astra rates, 2026-09-06.
+	// OpenAI API pricing checked 2026-09-23 (USD per token).
 	"gpt-6-astra": {
 		InputCostPerToken:                   10e-6,
 		OutputCostPerToken:                  50e-6,
@@ -22,6 +22,46 @@ var DefaultFallbackPricing = map[string]*ModelPricing{
 			CacheReadPriority: 4e-6, CacheCreatePriority: 50e-6,
 			InputFlex: 10e-6, OutputFlex: 37.5e-6,
 			CacheReadFlex: 1e-6, CacheCreateFlex: 12.5e-6,
+		},
+	},
+	"gpt-6-sol": {
+		InputCostPerToken:                   2e-6,
+		OutputCostPerToken:                  10e-6,
+		CacheReadInputTokenCost:             0.2e-6,
+		CacheCreationInputTokenCost:         2.5e-6,
+		InputCostPerTokenPriority:           4e-6,
+		OutputCostPerTokenPriority:          20e-6,
+		CacheReadInputTokenCostPriority:     0.4e-6,
+		CacheCreationInputTokenCostPriority: 5e-6,
+		SupportsPromptCaching:               true,
+		SupportsServiceTier:                 true,
+		LiteLLMProvider:                     "openai",
+		LongContext272K: LongContext272K{
+			Input: 4e-6, Output: 15e-6, CacheRead: 0.4e-6, CacheCreate: 5e-6,
+			InputPriority: 8e-6, OutputPriority: 30e-6,
+			CacheReadPriority: 0.8e-6, CacheCreatePriority: 10e-6,
+			InputFlex: 2e-6, OutputFlex: 7.5e-6,
+			CacheReadFlex: 0.2e-6, CacheCreateFlex: 2.5e-6,
+		},
+	},
+	"gpt-6-luna": {
+		InputCostPerToken:                   0.1e-6,
+		OutputCostPerToken:                  0.5e-6,
+		CacheReadInputTokenCost:             0.01e-6,
+		CacheCreationInputTokenCost:         0.125e-6,
+		InputCostPerTokenPriority:           0.2e-6,
+		OutputCostPerTokenPriority:          1e-6,
+		CacheReadInputTokenCostPriority:     0.02e-6,
+		CacheCreationInputTokenCostPriority: 0.25e-6,
+		SupportsPromptCaching:               true,
+		SupportsServiceTier:                 true,
+		LiteLLMProvider:                     "openai",
+		LongContext272K: LongContext272K{
+			Input: 0.2e-6, Output: 0.75e-6, CacheRead: 0.02e-6, CacheCreate: 0.25e-6,
+			InputPriority: 0.4e-6, OutputPriority: 1.5e-6,
+			CacheReadPriority: 0.04e-6, CacheCreatePriority: 0.5e-6,
+			InputFlex: 0.1e-6, OutputFlex: 0.375e-6,
+			CacheReadFlex: 0.01e-6, CacheCreateFlex: 0.125e-6,
 		},
 	},
 	// Claude models ($ per token: $3/M input = 3e-6, $15/M output = 1.5e-5)
@@ -124,6 +164,17 @@ var DefaultFallbackPricing = map[string]*ModelPricing{
 		SupportsPromptCaching:   true,
 		LiteLLMProvider:         "openai",
 	},
+	"gpt-5.3-codex": {
+		InputCostPerToken:               1.75e-6,
+		OutputCostPerToken:              14e-6,
+		CacheReadInputTokenCost:         0.175e-6,
+		InputCostPerTokenPriority:       3.5e-6,
+		OutputCostPerTokenPriority:      28e-6,
+		CacheReadInputTokenCostPriority: 0.35e-6,
+		SupportsPromptCaching:           true,
+		SupportsServiceTier:             true,
+		LiteLLMProvider:                 "openai",
+	},
 	"gpt-5.4": {
 		InputCostPerToken:               2.5e-06,
 		OutputCostPerToken:              1.5e-05,
@@ -145,6 +196,14 @@ var DefaultFallbackPricing = map[string]*ModelPricing{
 		LongContextOutputCostMultiplier: 1.5,
 		SupportsPromptCaching:           true,
 		LiteLLMProvider:                 "openai",
+	},
+	"gpt-5.6-cyber": {
+		InputCostPerToken:           12.5e-6,
+		OutputCostPerToken:          75e-6,
+		CacheReadInputTokenCost:     1.25e-6,
+		CacheCreationInputTokenCost: 15.625e-6,
+		SupportsPromptCaching:       true,
+		LiteLLMProvider:             "openai",
 	},
 
 	// Google Gemini models

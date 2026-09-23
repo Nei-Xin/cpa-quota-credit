@@ -73,7 +73,10 @@ type Service struct {
 	pricingData map[string]*ModelPricing
 	lastUpdated time.Time
 	localHash   string
-	stopCh      chan struct{}
+	ctx         context.Context
+	cancel      context.CancelFunc
+	stopOnce    sync.Once
+	syncLoop    sync.WaitGroup
 }
 
 func NewService(cfg Config) *Service {
@@ -90,11 +93,13 @@ func NewService(cfg Config) *Service {
 		cfg.UpdateIntervalHours = 24
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	s := &Service{
 		cfg:         cfg,
 		httpClient:  &http.Client{Timeout: 30 * time.Second},
 		pricingData: make(map[string]*ModelPricing),
-		stopCh:      make(chan struct{}),
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 	// Preload fallback prices
 	for k, v := range DefaultFallbackPricing {
@@ -119,7 +124,9 @@ func (s *Service) Initialize() error {
 	}
 
 	// Try remote sync in background
+	s.syncLoop.Add(1)
 	go func() {
+		defer s.syncLoop.Done()
 		_ = s.SyncWithRemote()
 		s.startScheduler()
 	}()
@@ -128,7 +135,8 @@ func (s *Service) Initialize() error {
 }
 
 func (s *Service) Stop() {
-	close(s.stopCh)
+	s.stopOnce.Do(s.cancel)
+	s.syncLoop.Wait()
 }
 
 func (s *Service) startScheduler() {
@@ -139,7 +147,7 @@ func (s *Service) startScheduler() {
 		select {
 		case <-ticker.C:
 			_ = s.SyncWithRemote()
-		case <-s.stopCh:
+		case <-s.ctx.Done():
 			return
 		}
 	}
@@ -150,7 +158,7 @@ func (s *Service) SyncWithRemote() error {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(s.ctx, 45*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", s.cfg.RemoteURL, nil)

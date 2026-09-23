@@ -58,6 +58,7 @@ import "C"
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -74,7 +75,7 @@ import (
 )
 
 var (
-	mu               sync.Mutex
+	mu               sync.RWMutex
 	pricingService   *pricing.Service
 	billingCalc      *billing.Calculator
 	quotaStore       *storage.Store
@@ -136,9 +137,13 @@ func cliproxyPluginShutdown() {
 	defer mu.Unlock()
 	if quotaStore != nil {
 		_ = quotaStore.Close()
+		quotaStore = nil
+		dashboardHandler = nil
 	}
 	if pricingService != nil {
 		pricingService.Stop()
+		pricingService = nil
+		billingCalc = nil
 	}
 }
 
@@ -154,20 +159,18 @@ func initPluginComponents(cfgMap map[string]interface{}) error {
 
 	var cfg pluginConfig
 	if cfgMap != nil {
-		raw, _ := json.Marshal(cfgMap)
-		_ = json.Unmarshal(raw, &cfg)
+		raw, err := json.Marshal(cfgMap)
+		if err != nil {
+			return fmt.Errorf("encode plugin config: %w", err)
+		}
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return fmt.Errorf("decode plugin config: %w", err)
+		}
 	}
 
 	if cfg.DBPath == "" {
 		cfg.DBPath = "./data/quota_credit.db"
 	}
-
-	if pricingService == nil {
-		pricingService = pricing.NewService(cfg.Pricing)
-		_ = pricingService.Initialize()
-	}
-
-	billingCalc = billing.NewCalculator(pricingService, cfg.Multipliers)
 
 	if quotaStore == nil {
 		store, err := storage.NewStore(cfg.DBPath)
@@ -177,6 +180,15 @@ func initPluginComponents(cfgMap map[string]interface{}) error {
 		quotaStore = store
 		dashboardHandler = dashboard.NewHandler(quotaStore)
 	}
+	service := pricing.NewService(cfg.Pricing)
+	if pricingService != nil {
+		pricingService.Stop()
+	}
+	if err := service.Initialize(); err != nil {
+		return fmt.Errorf("init pricing service: %w", err)
+	}
+	pricingService = service
+	billingCalc = billing.NewCalculator(service, cfg.Multipliers)
 
 	return nil
 }
@@ -228,11 +240,17 @@ func handleMethod(method string, reqBody []byte) ([]byte, error) {
 		if err := json.Unmarshal(reqBody, &record); err != nil {
 			return nil, err
 		}
+		mu.RLock()
+		defer mu.RUnlock()
 
 		if billingCalc != nil && quotaStore != nil {
 			model := record.Model
 			if model == "" {
 				model = record.Alias
+			}
+			serviceTier := strings.TrimSpace(record.ResponseServiceTier)
+			if serviceTier == "" {
+				serviceTier = record.ServiceTier
 			}
 
 			cost := billingCalc.Calculate(billing.CostInput{
@@ -245,7 +263,7 @@ func handleMethod(method string, reqBody []byte) ([]byte, error) {
 				CacheReadTokens:     record.Detail.CacheReadTokens,
 				CacheCreationTokens: record.Detail.CacheCreationTokens,
 				TotalTokens:         record.Detail.TotalTokens,
-				ServiceTier:         record.ServiceTier,
+				ServiceTier:         serviceTier,
 				APIKey:              record.APIKey,
 				AuthID:              record.AuthID,
 			})
@@ -255,8 +273,10 @@ func handleMethod(method string, reqBody []byte) ([]byte, error) {
 				reqTimestamp = time.Now()
 			}
 
-			_ = quotaStore.UpdateCodexQuota(record.AuthID, record.ResponseHeaders, time.Now())
-			_ = quotaStore.RecordUsage(storage.Record{
+			if err := quotaStore.UpdateCodexQuota(record.AuthID, record.ResponseHeaders, time.Now()); err != nil {
+				log.Printf("cpa-quota-credit: update quota snapshot: %v", err)
+			}
+			if err := quotaStore.RecordUsage(storage.Record{
 				APIKey:    record.APIKey,
 				AuthID:    record.AuthID,
 				Provider:  record.Provider,
@@ -265,7 +285,10 @@ func handleMethod(method string, reqBody []byte) ([]byte, error) {
 				LatencyMs: record.Latency.Milliseconds(),
 				Timestamp: reqTimestamp,
 				Failed:    record.Failed,
-			})
+			}); err != nil {
+				log.Printf("cpa-quota-credit: record usage: %v", err)
+				return nil, fmt.Errorf("record usage: %w", err)
+			}
 		}
 		return okEnvelope([]byte("{}")), nil
 
